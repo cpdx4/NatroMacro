@@ -142,10 +142,15 @@ MyWindow := WebviewWindow()
 MyWindow.OnEvent("Close", (*) => ExitApp())
 MyWindow.Load("BootstrapGUI/index.html")
 MyWindow.Debug()
+MyWindow.OnEvent("NavigationCompleted", (*) => SetTimer(SendBootstrapState, -50))
 MyWindow.AddHostObjectToScript("ahkButtonClick", {func:WebButtonClickEvent})
 MyWindow.AddHostObjectToScript("ahkCopyGlyphCode", {func:CopyGlyphCodeEvent})
 MyWindow.AddHostObjectToScript("ahkFormSubmit", {func:FormSubmitEvent})
+MyWindow.AddHostObjectToScript("ahkUpdateState", {func:WebUpdateState})
 MyWindow.Show("w1050 h650 Center", "Natro Macro (Gummy Boot(strap) Edition - CONCEPT)")
+
+; Load all settings from INI files into global variables
+nm_LoadKillSettings()
 ;///////////////////////////////////////////////////////////////////////////////////////////
 
 ;Hotkeys
@@ -166,8 +171,21 @@ F2:: {
 ;Web Functions
 ;///////////////////////////////////////////////////////////////////////////////////////////
 WebButtonClickEvent(button) {
-    MsgBox(button)
-	SetTimer start, -50
+	btn := StrLower(button)
+	switch btn {
+		case "start-button":
+			return SetTimer(start, -50)
+		case "pause-button":
+			return nm_pause()
+		case "stop-button":
+			return stop()
+		case "autoclick-button":
+			return autoclicker()
+		case "status-button":
+			return timers()
+		default:
+			MsgBox(button)
+	}
 }
 
 CopyGlyphCodeEvent(title) {
@@ -177,6 +195,934 @@ CopyGlyphCodeEvent(title) {
 	MsgBox(GlyphCode, "OuterHTML Copied to Clipboard")
 }
 
+nm_PostCollectUpdate(key, value) {
+	global MyWindow
+	if !IsSet(MyWindow)
+		return
+	; normalize value for JSON
+	isStr := (Type(value) = "String")
+	val := value
+	if (!isStr) {
+		if (val = "")
+			val := 0
+		jsonValue := val
+	} else {
+		if (val = "")
+			jsonValue := 0
+		else
+			jsonValue := '"' StrReplace(val, '"', '\\"') '"'
+	}
+	; ensure we never emit an empty JSON value (can happen if val is unset)
+	if (!IsSet(jsonValue) || (jsonValue = ""))
+		jsonValue := 0
+	; build JSON string explicitly to avoid brace mishaps
+	msg := '{"type":"collect","key":"' key '","value":' jsonValue '}'
+	OutputDebug "[ahk] send collect msg: " msg
+	try MyWindow.PostWebMessageAsString(msg)
+}
+
+nm_PostKillUpdate(key, value) {
+	global MyWindow
+	if !IsSet(MyWindow)
+		return
+	; Map Classic GUI control names to Kill setting keys
+	killKeyMap := Map(
+		"BugrunInterruptCheck", "KillBugRunGatherInterrupt",
+		"KingBeetleCheck", "KillKingBeetleEnabled",
+		"KingBeetleBabyCheck", "KillKingBeetleWaitBabyLove",
+		"TunnelBearCheck", "KillTunnelBearEnabled",
+		"TunnelBearBabyCheck", "KillTunnelBearWaitBabyLove",
+		"CocoCrabCheck", "KillCocoCrabEnabled",
+		"CommandoCheck", "KillCommandoChickEnabled",
+		"StumpSnailCheck", "KillStumpSnailEnabled",
+		"StingerCheck", "KillViciousBeeEnabled",
+		"StingerDailyBonusCheck", "KillViciousBeeOnlyDaily",
+		"StingerCloverCheck", "KillViciousBeeFieldClover",
+		"StingerSpiderCheck", "KillViciousBeeFieldSpider",
+		"StingerCactusCheck", "KillViciousBeeFieldCactus",
+		"StingerRoseCheck", "KillViciousBeeFieldRose",
+		"StingerMountainTopCheck", "KillViciousBeeFieldMountainTop",
+		"StingerPepperCheck", "KillViciousBeeFieldPepper",
+		"KingBeetleAmuletMode", "KillKingBeetleAmuletAction",
+		"ShellAmuletMode", "KillStumpSnailAmuletAction"
+	)
+	
+	; Translate control name to setting key
+	settingKey := killKeyMap.Has(key) ? killKeyMap[key] : key
+	
+	; normalize value for JSON
+	isStr := (Type(value) = "String")
+	val := value
+	if (!isStr) {
+		if (val = "")
+			val := 0
+		jsonValue := val
+	} else {
+		if (val = "")
+			jsonValue := 0
+		else
+			jsonValue := '"' StrReplace(val, '"', '\\"') '"'
+	}
+	; ensure we never emit an empty JSON value (can happen if val is unset)
+	if (!IsSet(jsonValue) || (jsonValue = ""))
+		jsonValue := 0
+	; build JSON string explicitly to avoid brace mishaps
+	msg := '{"type":"kill","key":"' settingKey '","value":' jsonValue '}'
+	OutputDebug "[ahk] send kill msg from Classic: " msg
+	try MyWindow.PostWebMessageAsString(msg)
+}
+
+SendKillMessage(key, val) {
+	; build the JSON value
+	jsonValue := 0
+	if (val = 1 || val = "1" || val = "true") {
+		jsonValue := 1
+	} else if (val = 0 || val = "0" || val = "false" || val = "") {
+		jsonValue := 0
+	} else if (Type(val) = "String") {
+		; String value - needs quotes and escaping
+		; Handle empty string explicitly
+		if (val = "")
+			jsonValue := '""'
+		else
+			jsonValue := '"' StrReplace(val, '"', '\\"') '"'
+	} else {
+		; Try to convert to number
+		try {
+			numVal := val + 0
+			if (numVal = "")
+				jsonValue := '"' StrReplace(val, '"', '\\"') '"'
+			else
+				jsonValue := numVal
+		} catch {
+			; If conversion fails, treat as string
+			jsonValue := '"' StrReplace(val, '"', '\\"') '"'
+		}
+	}
+	; ensure we never emit an empty JSON value (can happen if val is unset)
+	if (!IsSet(jsonValue) || (jsonValue = ""))
+		jsonValue := 0
+	; build JSON string explicitly to avoid brace mishaps
+	msg := '{"type":"kill","key":"' key '","value":' jsonValue '}'
+	OutputDebug "[ahk] send kill msg: " msg
+	try MyWindow.PostWebMessageAsString(msg)
+}
+
+SendBoostMessage(key, val) {
+	; build the JSON value
+	jsonValue := 0
+	if (val = 1 || val = "1" || val = "true") {
+		jsonValue := 1
+	} else if (val = 0 || val = "0" || val = "false" || val = "") {
+		jsonValue := 0
+	} else if (Type(val) = "String") {
+		; String value - needs quotes and escaping
+		; Handle empty string explicitly
+		if (val = "")
+			jsonValue := '""'
+		else
+			jsonValue := '"' StrReplace(val, '"', '\\"') '"'
+	} else {
+		; Try to convert to number
+		try {
+			numVal := val + 0
+			if (numVal = "")
+				jsonValue := '"' StrReplace(val, '"', '\\"') '"'
+			else
+				jsonValue := numVal
+		} catch {
+			; If conversion fails, treat as string
+			jsonValue := '"' StrReplace(val, '"', '\\"') '"'
+		}
+	}
+	; ensure we never emit an empty JSON value (can happen if val is unset)
+	if (!IsSet(jsonValue) || (jsonValue = ""))
+		jsonValue := 0
+	; build JSON string explicitly to avoid brace mishaps
+	msg := '{"type":"boost","key":"' key '","value":' jsonValue '}'
+	OutputDebug "[ahk] send boost msg: " msg
+	try MyWindow.PostWebMessageAsString(msg)
+}
+
+
+nm_FormatFieldName(name) {
+	static map := Map("blueflower", "Blue Flower"
+		, "mountaintop", "Mountain Top"
+		, "pinetree", "Pine Tree"
+		, "sunflower", "Sunflower"
+		, "dandelion", "Dandelion"
+		, "mushroom", "Mushroom"
+		, "clover", "Clover"
+		, "strawberry", "Strawberry"
+		, "spider", "Spider"
+		, "bamboo", "Bamboo"
+		, "pineapple", "Pineapple"
+		, "stump", "Stump"
+		, "cactus", "Cactus"
+		, "pumpkin", "Pumpkin"
+		, "rose", "Rose"
+		, "pepper", "Pepper"
+		, "coconut", "Coconut")
+	name := StrLower(Trim(name))
+	if map.Has(name)
+		return map[name]
+	return StrUpper(SubStr(name, 1, 1)) SubStr(name, 2)
+}
+
+WebUpdateState(payload) {
+	global FieldName1, FieldName2, FieldName3, MainGui
+	global FieldPattern1, FieldPattern2, FieldPattern3, FieldPatternSize1, FieldPatternSize2, FieldPatternSize3
+	global FieldPatternReps1, FieldPatternReps2, FieldPatternReps3, FieldDriftCheck1, FieldDriftCheck2, FieldDriftCheck3
+	global FieldPatternShift1, FieldPatternShift2, FieldPatternShift3, FieldPatternInvertFB1, FieldPatternInvertFB2, FieldPatternInvertFB3
+	global FieldPatternInvertLR1, FieldPatternInvertLR2, FieldPatternInvertLR3, FieldRotateDirection1, FieldRotateDirection2, FieldRotateDirection3
+	global FieldRotateTimes1, FieldRotateTimes2, FieldRotateTimes3, FieldUntilMins1, FieldUntilMins2, FieldUntilMins3
+	global FieldUntilPack1, FieldUntilPack2, FieldUntilPack3, FieldReturnType1, FieldReturnType2, FieldReturnType3
+	global FieldSprinklerLoc1, FieldSprinklerLoc2, FieldSprinklerLoc3, FieldSprinklerDist1, FieldSprinklerDist2, FieldSprinklerDist3
+	global ClockCheck, MondoBuffCheck, MondoAction, MondoLootDirection, AntPassCheck, RoboPassCheck, HoneystormCheck, HoneyDisCheck
+	global TreatDisCheck, BlueberryDisCheck, StrawberryDisCheck, CoconutDisCheck, RoyalJellyDisCheck, GlueDisCheck
+	global KillBugRunGatherInterrupt, KillBugRunRespawnTime, KillLadybugsMode, KillRhinoBeetlesMode, KillSpiderMode, KillMantisMode, KillScorpionsMode, KillWerewolfMode
+	global KillViciousBeeEnabled, KillViciousBeeOnlyDaily, KillViciousBeeFieldClover, KillViciousBeeFieldSpider, KillViciousBeeFieldCactus
+	global KillViciousBeeFieldRose, KillViciousBeeFieldMountainTop, KillViciousBeeFieldPepper
+	global KillKingBeetleEnabled, KillKingBeetleWaitBabyLove, KillKingBeetleAmuletAction
+	global KillTunnelBearEnabled, KillTunnelBearWaitBabyLove
+	global KillCocoCrabEnabled
+	global KillCommandoChickEnabled, KillCommandoChickLevel, KillCommandoChickHP, KillCommandoChickTime
+	global KillStumpSnailEnabled, KillStumpSnailHP, KillStumpSnailAmuletAction, KillStumpSnailTime
+	try {
+		data := JSON.parse(payload)
+	} catch {
+		OutputDebug "[ahk] JSON parse failed: " payload
+		return
+	}
+
+	switch data["type"] {
+		case "gatherFields":
+			OutputDebug "[ahk] recv gatherFields"
+			try {
+				fields := data["fields"]
+				if IsSet(fields) {
+					if (fields.Length >= 1 && fields[1]) {
+						newName := nm_FormatFieldName(fields[1])
+						if IsSet(FieldName1) {
+							FieldName1 := newName
+						}
+						try MainGui["FieldName1"].Text := newName
+						try IniWrite newName, "settings\nm_config.ini", "Gather", "FieldName1"
+					}
+					if (fields.Length >= 2 && fields[2]) {
+						newName := nm_FormatFieldName(fields[2])
+						if IsSet(FieldName2) {
+							FieldName2 := newName
+						}
+						try MainGui["FieldName2"].Text := newName
+						try IniWrite newName, "settings\nm_config.ini", "Gather", "FieldName2"
+					}
+					if (fields.Length >= 3 && fields[3]) {
+						newName := nm_FormatFieldName(fields[3])
+						if IsSet(FieldName3) {
+							FieldName3 := newName
+						}
+						try MainGui["FieldName3"].Text := newName
+						try IniWrite newName, "settings\nm_config.ini", "Gather", "FieldName3"
+					}
+				}
+			}
+
+		case "gatherField":
+			OutputDebug "[ahk] recv gatherField " data["num"] " " data["key"] "=" data["value"]
+			num := data["num"], key := data["key"], value := data["value"]
+			if (num = 1) {
+				switch key {
+					case "pattern": FieldPattern1 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldPattern1", MainGui["FieldPattern1"].Text := value
+					case "size": FieldPatternSize1 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldPatternSize1"
+					case "reps": FieldPatternReps1 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldPatternReps1"
+					case "drift": FieldDriftCheck1 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldDriftCheck1"
+					case "shift": FieldPatternShift1 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldPatternShift1"
+					case "invertfb": FieldPatternInvertFB1 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldPatternInvertFB1"
+					case "invertlr": FieldPatternInvertLR1 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldPatternInvertLR1"
+					case "rotdir": FieldRotateDirection1 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldRotateDirection1"
+					case "rottime": FieldRotateTimes1 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldRotateTimes1"
+					case "mins": FieldUntilMins1 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldUntilMins1"
+					case "pack": FieldUntilPack1 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldUntilPack1"
+					case "return": FieldReturnType1 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldReturnType1"
+					case "sprinkloc": FieldSprinklerLoc1 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldSprinklerLoc1"
+					case "sprdist": FieldSprinklerDist1 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldSprinklerDist1"
+				}
+			}
+			else if (num = 2) {
+				switch key {
+					case "pattern": FieldPattern2 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldPattern2", MainGui["FieldPattern2"].Text := value
+					case "size": FieldPatternSize2 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldPatternSize2"
+					case "reps": FieldPatternReps2 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldPatternReps2"
+					case "drift": FieldDriftCheck2 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldDriftCheck2"
+					case "shift": FieldPatternShift2 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldPatternShift2"
+					case "invertfb": FieldPatternInvertFB2 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldPatternInvertFB2"
+					case "invertlr": FieldPatternInvertLR2 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldPatternInvertLR2"
+					case "rotdir": FieldRotateDirection2 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldRotateDirection2"
+					case "rottime": FieldRotateTimes2 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldRotateTimes2"
+					case "mins": FieldUntilMins2 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldUntilMins2"
+					case "pack": FieldUntilPack2 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldUntilPack2"
+					case "return": FieldReturnType2 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldReturnType2"
+					case "sprinkloc": FieldSprinklerLoc2 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldSprinklerLoc2"
+					case "sprdist": FieldSprinklerDist2 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldSprinklerDist2"
+				}
+			}
+			else if (num = 3) {
+				switch key {
+					case "pattern": FieldPattern3 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldPattern3", MainGui["FieldPattern3"].Text := value
+					case "size": FieldPatternSize3 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldPatternSize3"
+					case "reps": FieldPatternReps3 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldPatternReps3"
+					case "drift": FieldDriftCheck3 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldDriftCheck3"
+					case "shift": FieldPatternShift3 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldPatternShift3"
+					case "invertfb": FieldPatternInvertFB3 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldPatternInvertFB3"
+					case "invertlr": FieldPatternInvertLR3 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldPatternInvertLR3"
+					case "rotdir": FieldRotateDirection3 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldRotateDirection3"
+					case "rottime": FieldRotateTimes3 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldRotateTimes3"
+					case "mins": FieldUntilMins3 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldUntilMins3"
+					case "pack": FieldUntilPack3 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldUntilPack3"
+					case "return": FieldReturnType3 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldReturnType3"
+					case "sprinkloc": FieldSprinklerLoc3 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldSprinklerLoc3"
+					case "sprdist": FieldSprinklerDist3 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldSprinklerDist3"
+				}
+			}
+
+		case "collect":
+			key := data["key"], value := data["value"]
+			OutputDebug "[ahk] recv collect " key "=" value
+			if (key = "MondoBuffCheck") {
+				MondoBuffCheck := value ? 1 : 0
+				IniWrite MondoBuffCheck, "settings\nm_config.ini", "Collect", "MondoBuffCheck"
+				try MainGui["MondoBuffCheck"].Value := MondoBuffCheck
+			}
+			else if (key = "MondoAction") {
+				MondoAction := value
+				IniWrite MondoAction, "settings\nm_config.ini", "Collect", "MondoAction"
+				try MainGui["MondoAction"].Text := MondoAction
+			}
+			else if (key = "MondoLootDirection") {
+				MondoLootDirection := value
+				IniWrite MondoLootDirection, "settings\nm_config.ini", "Collect", "MondoLootDirection"
+				try MainGui["MondoLootDirection"].Text := MondoLootDirection
+			}
+			else if (key = "AntPassCheck") {
+				AntPassCheck := value ? 1 : 0
+				IniWrite AntPassCheck, "settings\nm_config.ini", "Collect", "AntPassCheck"
+				try MainGui["AntPassCheck"].Value := AntPassCheck
+			}
+			else if (key = "ClockCheck") {
+				ClockCheck := value ? 1 : 0
+				IniWrite ClockCheck, "settings\nm_config.ini", "Collect", "ClockCheck"
+				try MainGui["ClockCheck"].Value := ClockCheck
+			}
+			else if (key = "RoboPassCheck") {
+				RoboPassCheck := value ? 1 : 0
+				IniWrite RoboPassCheck, "settings\nm_config.ini", "Collect", "RoboPassCheck"
+				try MainGui["RoboPassCheck"].Value := RoboPassCheck
+			}
+			else if (key = "HoneystormCheck") {
+				HoneystormCheck := value ? 1 : 0
+				IniWrite HoneystormCheck, "settings\nm_config.ini", "Collect", "HoneystormCheck"
+				try MainGui["HoneystormCheck"].Value := HoneystormCheck
+			}
+			else if (key = "HoneyDisCheck") {
+				HoneyDisCheck := value ? 1 : 0
+				IniWrite HoneyDisCheck, "settings\nm_config.ini", "Collect", "HoneyDisCheck"
+				try MainGui["HoneyDisCheck"].Value := HoneyDisCheck
+			}
+			else if (key = "TreatDisCheck") {
+				TreatDisCheck := value ? 1 : 0
+				IniWrite TreatDisCheck, "settings\nm_config.ini", "Collect", "TreatDisCheck"
+				try MainGui["TreatDisCheck"].Value := TreatDisCheck
+			}
+			else if (key = "BlueberryDisCheck") {
+				BlueberryDisCheck := value ? 1 : 0
+				IniWrite BlueberryDisCheck, "settings\nm_config.ini", "Collect", "BlueberryDisCheck"
+				try MainGui["BlueberryDisCheck"].Value := BlueberryDisCheck
+			}
+			else if (key = "StrawberryDisCheck") {
+				StrawberryDisCheck := value ? 1 : 0
+				IniWrite StrawberryDisCheck, "settings\nm_config.ini", "Collect", "StrawberryDisCheck"
+				try MainGui["StrawberryDisCheck"].Value := StrawberryDisCheck
+			}
+			else if (key = "CoconutDisCheck") {
+				CoconutDisCheck := value ? 1 : 0
+				IniWrite CoconutDisCheck, "settings\nm_config.ini", "Collect", "CoconutDisCheck"
+				try MainGui["CoconutDisCheck"].Value := CoconutDisCheck
+			}
+			else if (key = "RoyalJellyDisCheck") {
+				RoyalJellyDisCheck := value ? 1 : 0
+				IniWrite RoyalJellyDisCheck, "settings\nm_config.ini", "Collect", "RoyalJellyDisCheck"
+				try MainGui["RoyalJellyDisCheck"].Value := RoyalJellyDisCheck
+			}
+			else if (key = "GlueDisCheck") {
+				GlueDisCheck := value ? 1 : 0
+				IniWrite GlueDisCheck, "settings\nm_config.ini", "Collect", "GlueDisCheck"
+				try MainGui["GlueDisCheck"].Value := GlueDisCheck
+			}
+
+		case "kill":
+			key := data["key"], value := data["value"]
+			OutputDebug "[ahk] recv kill " key "=" value
+			if (key = "KillBugRunGatherInterrupt") {
+				KillBugRunGatherInterrupt := value ? 1 : 0
+				IniWrite KillBugRunGatherInterrupt, "settings\nm_config.ini", "Kill", "BugRunGatherInterrupt"
+				SendKillMessage(key, KillBugRunGatherInterrupt)
+				; Update Classic GUI checkbox
+				try MainGui["BugrunInterruptCheck"].Value := KillBugRunGatherInterrupt
+				; Update Collect section for backward compatibility
+				IniWrite KillBugRunGatherInterrupt, "settings\nm_config.ini", "Collect", "BugrunInterruptCheck"
+			}
+			else if (key = "KillBugRunRespawnTime") {
+				KillBugRunRespawnTime := value
+				IniWrite KillBugRunRespawnTime, "settings\nm_config.ini", "Kill", "BugRunRespawnTime"
+				SendKillMessage(key, KillBugRunRespawnTime)
+				; Update Classic GUI and Collect section
+				try MainGui["MonsterRespawnTime"].Value := value
+				IniWrite value, "settings\nm_config.ini", "Collect", "MonsterRespawnTime"
+			}
+			else if (key = "KillLadybugsMode") {
+				KillLadybugsMode := value
+				IniWrite KillLadybugsMode, "settings\nm_config.ini", "Kill", "LadybugsMode"
+				SendKillMessage(key, KillLadybugsMode)
+				; Map Web Off/Kill/Kill+Loot to Classic GUI Loot checkbox
+				; Off: don't loot (0)
+				; Kill: don't loot (0)
+				; Kill+Loot: loot (1)
+				if (value = "Kill+Loot") {
+					try MainGui["BugrunLadybugsLoot"].Value := 1
+				} else {
+					try MainGui["BugrunLadybugsLoot"].Value := 0
+				}
+				; Update Kill checkbox (0 = Off, 1 = Kill or Kill+Loot)
+				try MainGui["BugrunLadybugsCheck"].Value := (value != "Off") ? 1 : 0
+			}
+			else if (key = "KillRhinoBeetlesMode") {
+				KillRhinoBeetlesMode := value
+				IniWrite KillRhinoBeetlesMode, "settings\nm_config.ini", "Kill", "RhinoBeetlesMode"
+				SendKillMessage(key, KillRhinoBeetlesMode)
+				if (value = "Kill+Loot") {
+					try MainGui["BugrunRhinoBeetlesLoot"].Value := 1
+				} else {
+					try MainGui["BugrunRhinoBeetlesLoot"].Value := 0
+				}
+				try MainGui["BugrunRhinoBeetlesCheck"].Value := (value != "Off") ? 1 : 0
+			}
+			else if (key = "KillSpiderMode") {
+				KillSpiderMode := value
+				IniWrite KillSpiderMode, "settings\nm_config.ini", "Kill", "SpiderMode"
+				SendKillMessage(key, KillSpiderMode)
+				if (value = "Kill+Loot") {
+					try MainGui["BugrunSpiderLoot"].Value := 1
+				} else {
+					try MainGui["BugrunSpiderLoot"].Value := 0
+				}
+				try MainGui["BugrunSpiderCheck"].Value := (value != "Off") ? 1 : 0
+			}
+			else if (key = "KillMantisMode") {
+				KillMantisMode := value
+				IniWrite KillMantisMode, "settings\nm_config.ini", "Kill", "MantisMode"
+				SendKillMessage(key, KillMantisMode)
+				if (value = "Kill+Loot") {
+					try MainGui["BugrunMantisLoot"].Value := 1
+				} else {
+					try MainGui["BugrunMantisLoot"].Value := 0
+				}
+				try MainGui["BugrunMantisCheck"].Value := (value != "Off") ? 1 : 0
+			}
+			else if (key = "KillScorpionsMode") {
+				KillScorpionsMode := value
+				IniWrite KillScorpionsMode, "settings\nm_config.ini", "Kill", "ScorpionsMode"
+				SendKillMessage(key, KillScorpionsMode)
+				if (value = "Kill+Loot") {
+					try MainGui["BugrunScorpionsLoot"].Value := 1
+				} else {
+					try MainGui["BugrunScorpionsLoot"].Value := 0
+				}
+				try MainGui["BugrunScorpionsCheck"].Value := (value != "Off") ? 1 : 0
+			}
+			else if (key = "KillWerewolfMode") {
+				KillWerewolfMode := value
+				IniWrite KillWerewolfMode, "settings\nm_config.ini", "Kill", "WerewolfMode"
+				SendKillMessage(key, KillWerewolfMode)
+				if (value = "Kill+Loot") {
+					try MainGui["BugrunWerewolfLoot"].Value := 1
+				} else {
+					try MainGui["BugrunWerewolfLoot"].Value := 0
+				}
+				try MainGui["BugrunWerewolfCheck"].Value := (value != "Off") ? 1 : 0
+			}
+			else if (key = "KillViciousBeeEnabled") {
+				KillViciousBeeEnabled := value ? 1 : 0
+				IniWrite KillViciousBeeEnabled, "settings\nm_config.ini", "Kill", "ViciousBeeEnabled"
+				SendKillMessage(key, KillViciousBeeEnabled)
+				try MainGui["StingerCheck"].Value := KillViciousBeeEnabled
+			}
+			else if (key = "KillViciousBeeOnlyDaily") {
+				KillViciousBeeOnlyDaily := value ? 1 : 0
+				IniWrite KillViciousBeeOnlyDaily, "settings\nm_config.ini", "Kill", "ViciousBeeOnlyDaily"
+				SendKillMessage(key, KillViciousBeeOnlyDaily)
+				try MainGui["StingerDailyBonusCheck"].Value := KillViciousBeeOnlyDaily
+			}
+			else if (key = "KillViciousBeeFieldClover") {
+				KillViciousBeeFieldClover := value ? 1 : 0
+				IniWrite KillViciousBeeFieldClover, "settings\nm_config.ini", "Kill", "ViciousBeeFieldClover"
+				SendKillMessage(key, KillViciousBeeFieldClover)
+				try MainGui["StingerCloverCheck"].Value := KillViciousBeeFieldClover
+			}
+			else if (key = "KillViciousBeeFieldSpider") {
+				KillViciousBeeFieldSpider := value ? 1 : 0
+				IniWrite KillViciousBeeFieldSpider, "settings\nm_config.ini", "Kill", "ViciousBeeFieldSpider"
+				SendKillMessage(key, KillViciousBeeFieldSpider)
+				try MainGui["StingerSpiderCheck"].Value := KillViciousBeeFieldSpider
+			}
+			else if (key = "KillViciousBeeFieldCactus") {
+				KillViciousBeeFieldCactus := value ? 1 : 0
+				IniWrite KillViciousBeeFieldCactus, "settings\nm_config.ini", "Kill", "ViciousBeeFieldCactus"
+				SendKillMessage(key, KillViciousBeeFieldCactus)
+				try MainGui["StingerCactusCheck"].Value := KillViciousBeeFieldCactus
+			}
+			else if (key = "KillViciousBeeFieldRose") {
+				KillViciousBeeFieldRose := value ? 1 : 0
+				IniWrite KillViciousBeeFieldRose, "settings\nm_config.ini", "Kill", "ViciousBeeFieldRose"
+				SendKillMessage(key, KillViciousBeeFieldRose)
+				try MainGui["StingerRoseCheck"].Value := KillViciousBeeFieldRose
+			}
+			else if (key = "KillViciousBeeFieldMountainTop") {
+				KillViciousBeeFieldMountainTop := value ? 1 : 0
+				IniWrite KillViciousBeeFieldMountainTop, "settings\nm_config.ini", "Kill", "ViciousBeeFieldMountainTop"
+				SendKillMessage(key, KillViciousBeeFieldMountainTop)
+				try MainGui["StingerMountainTopCheck"].Value := KillViciousBeeFieldMountainTop
+			}
+			else if (key = "KillViciousBeeFieldPepper") {
+				KillViciousBeeFieldPepper := value ? 1 : 0
+				IniWrite KillViciousBeeFieldPepper, "settings\nm_config.ini", "Kill", "ViciousBeeFieldPepper"
+				SendKillMessage(key, KillViciousBeeFieldPepper)
+				try MainGui["StingerPepperCheck"].Value := KillViciousBeeFieldPepper
+			}
+			else if (key = "KillKingBeetleEnabled") {
+				KillKingBeetleEnabled := value ? 1 : 0
+				IniWrite KillKingBeetleEnabled, "settings\nm_config.ini", "Kill", "KingBeetleEnabled"
+				SendKillMessage(key, KillKingBeetleEnabled)
+				try MainGui["KingBeetleCheck"].Value := KillKingBeetleEnabled
+			}
+			else if (key = "KillKingBeetleWaitBabyLove") {
+				KillKingBeetleWaitBabyLove := value ? 1 : 0
+				IniWrite KillKingBeetleWaitBabyLove, "settings\nm_config.ini", "Kill", "KingBeetleWaitBabyLove"
+				SendKillMessage(key, KillKingBeetleWaitBabyLove)
+			}
+			else if (key = "KillKingBeetleAmuletAction") {
+				KillKingBeetleAmuletAction := value
+				IniWrite KillKingBeetleAmuletAction, "settings\nm_config.ini", "Kill", "KingBeetleAmuletAction"
+				SendKillMessage(key, KillKingBeetleAmuletAction)
+				; Update Classic GUI checkbox and text
+				try {
+					kbMode := (value = "Keep Old") ? 1 : 0
+					MainGui["KingBeetleAmuletMode"].Value := kbMode
+					MainGui["KingBeetleAmuletModeText"].Text := (kbMode = 1) ? " Keep Old" : "Do Nothing"
+					IniWrite kbMode, "settings\nm_config.ini", "Collect", "KingBeetleAmuletMode"
+				} catch {
+					OutputDebug "[ahk] Error updating KingBeetleAmuletMode"
+				}
+			}
+			else if (key = "KillTunnelBearEnabled") {
+				KillTunnelBearEnabled := value ? 1 : 0
+				IniWrite KillTunnelBearEnabled, "settings\nm_config.ini", "Kill", "TunnelBearEnabled"
+				SendKillMessage(key, KillTunnelBearEnabled)
+				try MainGui["TunnelBearCheck"].Value := KillTunnelBearEnabled
+			}
+			else if (key = "KillTunnelBearWaitBabyLove") {
+				KillTunnelBearWaitBabyLove := value ? 1 : 0
+				IniWrite KillTunnelBearWaitBabyLove, "settings\nm_config.ini", "Kill", "TunnelBearWaitBabyLove"
+				SendKillMessage(key, KillTunnelBearWaitBabyLove)
+			}
+			else if (key = "KillCocoCrabEnabled") {
+				KillCocoCrabEnabled := value ? 1 : 0
+				IniWrite KillCocoCrabEnabled, "settings\nm_config.ini", "Kill", "CocoCrabEnabled"
+				SendKillMessage(key, KillCocoCrabEnabled)
+				try MainGui["CocoCrabCheck"].Value := KillCocoCrabEnabled
+			}
+			else if (key = "KillCommandoChickEnabled") {
+				KillCommandoChickEnabled := value ? 1 : 0
+				IniWrite KillCommandoChickEnabled, "settings\nm_config.ini", "Kill", "CommandoChickEnabled"
+				SendKillMessage(key, KillCommandoChickEnabled)
+				try MainGui["CommandoCheck"].Value := KillCommandoChickEnabled
+			}
+			else if (key = "KillCommandoChickLevel") {
+				KillCommandoChickLevel := value
+				IniWrite KillCommandoChickLevel, "settings\nm_config.ini", "Kill", "CommandoChickLevel"
+				SendKillMessage(key, KillCommandoChickLevel)
+				; Update Classic GUI controls
+				try MainGui["ChickLevel"].Value := value
+				try MainGui["ChickLevelText"].Text := value
+				; Update Collect section for backward compatibility
+				IniWrite value, "settings\nm_config.ini", "Collect", "ChickLevel"
+			}
+			else if (key = "KillCommandoChickHP") {
+				global CommandoChickHealth, InputChickHealth
+				KillCommandoChickHP := value
+				IniWrite KillCommandoChickHP, "settings\nm_config.ini", "Kill", "CommandoChickHP"
+				SendKillMessage(key, KillCommandoChickHP)
+				; Update Classic GUI controls
+				try {
+					MainGui["ChickHealthEdit"].Value := value
+					ChickLevel := MainGui["ChickLevel"].Value
+					MaxHealth := CommandoChickHealth.Has(ChickLevel) ? CommandoChickHealth[ChickLevel] : 10000000
+					InputChickHealth := Round(Min(100, ((value || 0) / MaxHealth) * 100), 2)
+					MainGui["ChickHealthText"].Opt("+c" Format("0x{1:02x}{2:02x}{3:02x}", Round(Min(3*(100-InputChickHealth), 150)), Round(Min(3*InputChickHealth, 150)), 0) " +Redraw")
+					MainGui["ChickHealthText"].Text := InputChickHealth "%"
+					; Update Collect section for backward compatibility
+					IniWrite InputChickHealth, "settings\nm_config.ini", "Collect", "InputChickHealth"
+				}
+			}
+			else if (key = "KillCommandoChickTime") {
+				global ChickTime
+				KillCommandoChickTime := value
+				IniWrite KillCommandoChickTime, "settings\nm_config.ini", "Kill", "CommandoChickTime"
+				SendKillMessage(key, KillCommandoChickTime)
+				; Update Classic GUI controls - convert time string to UpDown index
+				try {
+					static timeMap := Map("5m", 1, "10m", 2, "15m", 3, "Kill", 4)
+					if (timeMap.Has(value)) {
+						MainGui["ChickTimeUpDown"].Value := timeMap[value]
+						ChickTime := (value = "Kill") ? "Kill" : SubStr(value, 1, -1)
+						MainGui["ChickTimeText"].Text := value
+						; Update Collect section for backward compatibility
+						IniWrite ChickTime, "settings\nm_config.ini", "Collect", "ChickTime"
+					}
+				}
+			}
+			else if (key = "KillStumpSnailEnabled") {
+				KillStumpSnailEnabled := value ? 1 : 0
+				IniWrite KillStumpSnailEnabled, "settings\nm_config.ini", "Kill", "StumpSnailEnabled"
+				SendKillMessage(key, KillStumpSnailEnabled)
+				try MainGui["StumpSnailCheck"].Value := KillStumpSnailEnabled
+			}
+			else if (key = "KillStumpSnailHP") {
+				global InputSnailHealth
+				KillStumpSnailHP := value
+				IniWrite KillStumpSnailHP, "settings\nm_config.ini", "Kill", "StumpSnailHP"
+				SendKillMessage(key, KillStumpSnailHP)
+				; Update Classic GUI controls
+				try {
+					MainGui["SnailHealthEdit"].Value := value
+					InputSnailHealth := Round(((value || 0) / 30000000) * 100, 2)
+					MainGui["SnailHealthText"].Opt("+c" Format("0x{1:02x}{2:02x}{3:02x}", Round(Min(3*(100-InputSnailHealth), 150)), Round(Min(3*InputSnailHealth, 150)), 0) " +Redraw")
+					MainGui["SnailHealthText"].Text := InputSnailHealth "%"
+					; Update Collect section for backward compatibility
+					IniWrite InputSnailHealth, "settings\nm_config.ini", "Collect", "InputSnailHealth"
+				}
+			}
+			else if (key = "KillStumpSnailAmuletAction") {
+				KillStumpSnailAmuletAction := value
+				IniWrite KillStumpSnailAmuletAction, "settings\nm_config.ini", "Kill", "StumpSnailAmuletAction"
+				SendKillMessage(key, KillStumpSnailAmuletAction)
+				; Update Classic GUI checkbox and text
+				try {
+					snailMode := (value = "Keep Old") ? 1 : 0
+					MainGui["ShellAmuletMode"].Value := snailMode
+					MainGui["ShellAmuletModeText"].Text := (snailMode = 1) ? " Keep Old" : "Do Nothing"
+					IniWrite snailMode, "settings\nm_config.ini", "Collect", "ShellAmuletMode"
+				} catch {
+					OutputDebug "[ahk] Error updating ShellAmuletMode"
+				}
+			}
+			else if (key = "KillStumpSnailTime") {
+			global SnailTime
+			KillStumpSnailTime := value
+			IniWrite KillStumpSnailTime, "settings\nm_config.ini", "Kill", "StumpSnailTime"
+			SendKillMessage(key, KillStumpSnailTime)
+			; Update Classic GUI controls - convert time string to UpDown index
+			try {
+				static timeMap := Map("5m", 1, "10m", 2, "15m", 3, "Kill", 4)
+				if (timeMap.Has(value)) {
+					MainGui["SnailTimeUpDown"].Value := timeMap[value]
+					SnailTime := (value = "Kill") ? "Kill" : SubStr(value, 1, -1)
+					MainGui["SnailTimeText"].Text := value
+					; Update Collect section for backward compatibility
+					IniWrite SnailTime, "settings\nm_config.ini", "Collect", "SnailTime"
+				}
+			}
+		}
+		case "boost":
+			key := data["key"], value := data["value"]
+			OutputDebug "[ahk] recv boost " key "=" value
+			if (key = "FieldBooster1") {
+				FieldBooster1 := value
+				IniWrite FieldBooster1, "settings\nm_config.ini", "Boost", "FieldBooster1"
+				try MainGui["FieldBooster1"].Text := value
+				SendBoostMessage(key, value)
+			}
+			else if (key = "FieldBooster2") {
+				FieldBooster2 := value
+				IniWrite FieldBooster2, "settings\nm_config.ini", "Boost", "FieldBooster2"
+				try MainGui["FieldBooster2"].Text := value
+				SendBoostMessage(key, value)
+			}
+			else if (key = "FieldBooster3") {
+				FieldBooster3 := value
+				IniWrite FieldBooster3, "settings\nm_config.ini", "Boost", "FieldBooster3"
+				try MainGui["FieldBooster3"].Text := value
+				SendBoostMessage(key, value)
+			}
+			else if (key = "FieldBoosterMins") {
+				FieldBoosterMins := value
+				IniWrite FieldBoosterMins, "settings\nm_config.ini", "Boost", "FieldBoosterMins"
+				try MainGui["FieldBoosterMins"].Text := value
+				try MainGui["FieldBoosterMinsUpDown"].Value := value // 5
+				SendBoostMessage(key, value)
+			}
+			else if (key = "BoostChaserCheck") {
+				BoostChaserCheck := value ? 1 : 0
+				IniWrite BoostChaserCheck, "settings\nm_config.ini", "Boost", "BoostChaserCheck"
+				try MainGui["BoostChaserCheck"].Value := BoostChaserCheck
+				SendBoostMessage(key, BoostChaserCheck)
+			}
+			else if (key = "BlueFlowerBoosterCheck") {
+				BlueFlowerBoosterCheck := value ? 1 : 0
+				IniWrite BlueFlowerBoosterCheck, "settings\nm_config.ini", "Boost", "BlueFlowerBoosterCheck"
+				try MainGui["BlueFlowerBoosterCheck"].Value := BlueFlowerBoosterCheck
+				SendBoostMessage(key, BlueFlowerBoosterCheck)
+			}
+			else if (key = "BambooBoosterCheck") {
+				BambooBoosterCheck := value ? 1 : 0
+				IniWrite BambooBoosterCheck, "settings\nm_config.ini", "Boost", "BambooBoosterCheck"
+				try MainGui["BambooBoosterCheck"].Value := BambooBoosterCheck
+				SendBoostMessage(key, BambooBoosterCheck)
+			}
+			else if (key = "PineTreeBoosterCheck") {
+				PineTreeBoosterCheck := value ? 1 : 0
+				IniWrite PineTreeBoosterCheck, "settings\nm_config.ini", "Boost", "PineTreeBoosterCheck"
+				try MainGui["PineTreeBoosterCheck"].Value := PineTreeBoosterCheck
+				SendBoostMessage(key, PineTreeBoosterCheck)
+			}
+			else if (key = "DandelionBoosterCheck") {
+				DandelionBoosterCheck := value ? 1 : 0
+				IniWrite DandelionBoosterCheck, "settings\nm_config.ini", "Boost", "DandelionBoosterCheck"
+				try MainGui["DandelionBoosterCheck"].Value := DandelionBoosterCheck
+				SendBoostMessage(key, DandelionBoosterCheck)
+			}
+			else if (key = "SunflowerBoosterCheck") {
+				SunflowerBoosterCheck := value ? 1 : 0
+				IniWrite SunflowerBoosterCheck, "settings\nm_config.ini", "Boost", "SunflowerBoosterCheck"
+				try MainGui["SunflowerBoosterCheck"].Value := SunflowerBoosterCheck
+				SendBoostMessage(key, SunflowerBoosterCheck)
+			}
+			else if (key = "CloverBoosterCheck") {
+				CloverBoosterCheck := value ? 1 : 0
+				IniWrite CloverBoosterCheck, "settings\nm_config.ini", "Boost", "CloverBoosterCheck"
+				try MainGui["CloverBoosterCheck"].Value := CloverBoosterCheck
+				SendBoostMessage(key, CloverBoosterCheck)
+			}
+			else if (key = "SpiderBoosterCheck") {
+				SpiderBoosterCheck := value ? 1 : 0
+				IniWrite SpiderBoosterCheck, "settings\nm_config.ini", "Boost", "SpiderBoosterCheck"
+				try MainGui["SpiderBoosterCheck"].Value := SpiderBoosterCheck
+				SendBoostMessage(key, SpiderBoosterCheck)
+			}
+			else if (key = "PineappleBoosterCheck") {
+				PineappleBoosterCheck := value ? 1 : 0
+				IniWrite PineappleBoosterCheck, "settings\nm_config.ini", "Boost", "PineappleBoosterCheck"
+				try MainGui["PineappleBoosterCheck"].Value := PineappleBoosterCheck
+				SendBoostMessage(key, PineappleBoosterCheck)
+			}
+			else if (key = "CactusBoosterCheck") {
+				CactusBoosterCheck := value ? 1 : 0
+				IniWrite CactusBoosterCheck, "settings\nm_config.ini", "Boost", "CactusBoosterCheck"
+				try MainGui["CactusBoosterCheck"].Value := CactusBoosterCheck
+				SendBoostMessage(key, CactusBoosterCheck)
+			}
+			else if (key = "PumpkinBoosterCheck") {
+				PumpkinBoosterCheck := value ? 1 : 0
+				IniWrite PumpkinBoosterCheck, "settings\nm_config.ini", "Boost", "PumpkinBoosterCheck"
+				try MainGui["PumpkinBoosterCheck"].Value := PumpkinBoosterCheck
+				SendBoostMessage(key, PumpkinBoosterCheck)
+			}
+			else if (key = "MushroomBoosterCheck") {
+				MushroomBoosterCheck := value ? 1 : 0
+				IniWrite MushroomBoosterCheck, "settings\nm_config.ini", "Boost", "MushroomBoosterCheck"
+				try MainGui["MushroomBoosterCheck"].Value := MushroomBoosterCheck
+				SendBoostMessage(key, MushroomBoosterCheck)
+			}
+			else if (key = "StrawberryBoosterCheck") {
+				StrawberryBoosterCheck := value ? 1 : 0
+				IniWrite StrawberryBoosterCheck, "settings\nm_config.ini", "Boost", "StrawberryBoosterCheck"
+				try MainGui["StrawberryBoosterCheck"].Value := StrawberryBoosterCheck
+				SendBoostMessage(key, StrawberryBoosterCheck)
+			}
+			else if (key = "RoseBoosterCheck") {
+				RoseBoosterCheck := value ? 1 : 0
+				IniWrite RoseBoosterCheck, "settings\nm_config.ini", "Boost", "RoseBoosterCheck"
+				try MainGui["RoseBoosterCheck"].Value := RoseBoosterCheck
+				SendBoostMessage(key, RoseBoosterCheck)
+			}
+			else if (key = "PepperBoosterCheck") {
+				PepperBoosterCheck := value ? 1 : 0
+				IniWrite PepperBoosterCheck, "settings\nm_config.ini", "Boost", "PepperBoosterCheck"
+				try MainGui["PepperBoosterCheck"].Value := PepperBoosterCheck
+				SendBoostMessage(key, PepperBoosterCheck)
+			}
+			else if (key = "StumpBoosterCheck") {
+				StumpBoosterCheck := value ? 1 : 0
+				IniWrite StumpBoosterCheck, "settings\nm_config.ini", "Boost", "StumpBoosterCheck"
+				try MainGui["StumpBoosterCheck"].Value := StumpBoosterCheck
+				SendBoostMessage(key, StumpBoosterCheck)
+			}
+			else if (key = "CoconutBoosterCheck") {
+				CoconutBoosterCheck := value ? 1 : 0
+				IniWrite CoconutBoosterCheck, "settings\nm_config.ini", "Boost", "CoconutBoosterCheck"
+				try MainGui["CoconutBoosterCheck"].Value := CoconutBoosterCheck
+				SendBoostMessage(key, CoconutBoosterCheck)
+			}
+			else if (key = "AutoFieldBoostActive") {
+				AutoFieldBoostActive := value ? 1 : 0
+				IniWrite AutoFieldBoostActive, "settings\nm_config.ini", "Boost", "AutoFieldBoostActive"
+				try MainGui["AutoFieldBoostButton"].Text := (AutoFieldBoostActive ? "Auto Field Boost`n[ON]" : "Auto Field Boost`n[OFF]")
+				SendBoostMessage(key, AutoFieldBoostActive)
+			}
+			else if (key = "AutoFieldBoostRefresh") {
+				AutoFieldBoostRefresh := value
+				IniWrite AutoFieldBoostRefresh, "settings\nm_config.ini", "Boost", "AutoFieldBoostRefresh"
+				SendBoostMessage(key, value)
+			}
+		case "killSettings":
+			OutputDebug "[ahk] recv killSettings"
+			try {
+				; BUG RUN SETTINGS
+				if (data.HasKey("bugRun") && data["bugRun"]) {
+					bugRun := data["bugRun"]
+					if (bugRun.HasKey("allowGatherInterrupt")) {
+						KillBugRunGatherInterrupt := bugRun["allowGatherInterrupt"] ? 1 : 0
+						IniWrite KillBugRunGatherInterrupt, "settings\nm_config.ini", "Kill", "BugRunGatherInterrupt"
+					}
+					if (bugRun.HasKey("respawnTime")) {
+						KillBugRunRespawnTime := bugRun["respawnTime"]
+						IniWrite KillBugRunRespawnTime, "settings\nm_config.ini", "Kill", "BugRunRespawnTime"
+					}
+					if (bugRun.HasKey("loot") && bugRun["loot"]) {
+						loot := bugRun["loot"]
+						if (loot.HasKey("ladybugs")) {
+							KillLadybugsMode := loot["ladybugs"]
+							IniWrite KillLadybugsMode, "settings\nm_config.ini", "Kill", "LadybugsMode"
+						}
+						if (loot.HasKey("rhinoBeetles")) {
+							KillRhinoBeetlesMode := loot["rhinoBeetles"]
+							IniWrite KillRhinoBeetlesMode, "settings\nm_config.ini", "Kill", "RhinoBeetlesMode"
+						}
+						if (loot.HasKey("spider")) {
+							KillSpiderMode := loot["spider"]
+							IniWrite KillSpiderMode, "settings\nm_config.ini", "Kill", "SpiderMode"
+						}
+						if (loot.HasKey("mantis")) {
+							KillMantisMode := loot["mantis"]
+							IniWrite KillMantisMode, "settings\nm_config.ini", "Kill", "MantisMode"
+						}
+						if (loot.HasKey("scorpions")) {
+							KillScorpionsMode := loot["scorpions"]
+							IniWrite KillScorpionsMode, "settings\nm_config.ini", "Kill", "ScorpionsMode"
+						}
+						if (loot.HasKey("werewolf")) {
+							KillWerewolfMode := loot["werewolf"]
+							IniWrite KillWerewolfMode, "settings\nm_config.ini", "Kill", "WerewolfMode"
+						}
+					}
+				}
+				; STINGERS SETTINGS
+				if (data.HasKey("stingers") && data["stingers"]) {
+					stingers := data["stingers"]
+					if (stingers.HasKey("killViciousBee")) {
+						KillViciousBeeEnabled := stingers["killViciousBee"] ? 1 : 0
+						IniWrite KillViciousBeeEnabled, "settings\nm_config.ini", "Kill", "ViciousBeeEnabled"
+					}
+					if (stingers.HasKey("onlyDaily")) {
+						KillViciousBeeOnlyDaily := stingers["onlyDaily"] ? 1 : 0
+						IniWrite KillViciousBeeOnlyDaily, "settings\nm_config.ini", "Kill", "ViciousBeeOnlyDaily"
+					}
+					if (stingers.HasKey("fields") && stingers["fields"]) {
+						fields := stingers["fields"]
+						KillViciousBeeFieldClover := fields["clover"] ? 1 : 0, IniWrite KillViciousBeeFieldClover, "settings\nm_config.ini", "Kill", "ViciousBeeFieldClover"
+						KillViciousBeeFieldSpider := fields["spider"] ? 1 : 0, IniWrite KillViciousBeeFieldSpider, "settings\nm_config.ini", "Kill", "ViciousBeeFieldSpider"
+						KillViciousBeeFieldCactus := fields["cactus"] ? 1 : 0, IniWrite KillViciousBeeFieldCactus, "settings\nm_config.ini", "Kill", "ViciousBeeFieldCactus"
+						KillViciousBeeFieldRose := fields["rose"] ? 1 : 0, IniWrite KillViciousBeeFieldRose, "settings\nm_config.ini", "Kill", "ViciousBeeFieldRose"
+						KillViciousBeeFieldMountainTop := fields["mountainTop"] ? 1 : 0, IniWrite KillViciousBeeFieldMountainTop, "settings\nm_config.ini", "Kill", "ViciousBeeFieldMountainTop"
+						KillViciousBeeFieldPepper := fields["pepper"] ? 1 : 0, IniWrite KillViciousBeeFieldPepper, "settings\nm_config.ini", "Kill", "ViciousBeeFieldPepper"
+					}
+				}
+				; BOSSES SETTINGS
+				if (data.HasKey("bosses") && data["bosses"]) {
+					bosses := data["bosses"]
+					; King Beetle
+					if (bosses.HasKey("kingBeetle") && bosses["kingBeetle"]) {
+						kb := bosses["kingBeetle"]
+						if (kb.HasKey("enabled")) {
+							KillKingBeetleEnabled := kb["enabled"] ? 1 : 0, IniWrite KillKingBeetleEnabled, "settings\nm_config.ini", "Kill", "KingBeetleEnabled"
+						}
+						if (kb.HasKey("waitBabyLove")) {
+							KillKingBeetleWaitBabyLove := kb["waitBabyLove"] ? 1 : 0, IniWrite KillKingBeetleWaitBabyLove, "settings\nm_config.ini", "Kill", "KingBeetleWaitBabyLove"
+						}
+						if (kb.HasKey("amuletAction")) {
+							KillKingBeetleAmuletAction := kb["amuletAction"], IniWrite KillKingBeetleAmuletAction, "settings\nm_config.ini", "Kill", "KingBeetleAmuletAction"
+						}
+					}
+					; Tunnel Bear
+					if (bosses.HasKey("tunnelBear") && bosses["tunnelBear"]) {
+						tb := bosses["tunnelBear"]
+						if (tb.HasKey("enabled")) {
+							KillTunnelBearEnabled := tb["enabled"] ? 1 : 0, IniWrite KillTunnelBearEnabled, "settings\nm_config.ini", "Kill", "TunnelBearEnabled"
+						}
+						if (tb.HasKey("waitBabyLove")) {
+							KillTunnelBearWaitBabyLove := tb["waitBabyLove"] ? 1 : 0, IniWrite KillTunnelBearWaitBabyLove, "settings\nm_config.ini", "Kill", "TunnelBearWaitBabyLove"
+						}
+					}
+					; Coco Crab
+					if (bosses.HasKey("cocoCrab") && bosses["cocoCrab"]) {
+						if (bosses["cocoCrab"].HasKey("enabled")) {
+							KillCocoCrabEnabled := bosses["cocoCrab"]["enabled"] ? 1 : 0
+							IniWrite KillCocoCrabEnabled, "settings\nm_config.ini", "Kill", "CocoCrabEnabled"
+						}
+					}
+					; Commando Chick
+					if (bosses.HasKey("commandoChick") && bosses["commandoChick"]) {
+						cc := bosses["commandoChick"]
+						if (cc.HasKey("enabled")) {
+							KillCommandoChickEnabled := cc["enabled"] ? 1 : 0, IniWrite KillCommandoChickEnabled, "settings\nm_config.ini", "Kill", "CommandoChickEnabled"
+						}
+						if (cc.HasKey("level")) {
+							KillCommandoChickLevel := cc["level"], IniWrite KillCommandoChickLevel, "settings\nm_config.ini", "Kill", "CommandoChickLevel"
+						}
+						if (cc.HasKey("hp")) {
+							KillCommandoChickHP := cc["hp"], IniWrite KillCommandoChickHP, "settings\nm_config.ini", "Kill", "CommandoChickHP"
+						}
+						if (cc.HasKey("time")) {
+							KillCommandoChickTime := cc["time"], IniWrite KillCommandoChickTime, "settings\nm_config.ini", "Kill", "CommandoChickTime"
+						}
+					}
+					; Stump Snail
+					if (bosses.HasKey("stumpSnail") && bosses["stumpSnail"]) {
+						ss := bosses["stumpSnail"]
+						if (ss.HasKey("enabled")) {
+							KillStumpSnailEnabled := ss["enabled"] ? 1 : 0, IniWrite KillStumpSnailEnabled, "settings\nm_config.ini", "Kill", "StumpSnailEnabled"
+						}
+						if (ss.HasKey("hp")) {
+							KillStumpSnailHP := ss["hp"], IniWrite KillStumpSnailHP, "settings\nm_config.ini", "Kill", "StumpSnailHP"
+						}
+						if (ss.HasKey("amuletAction")) {
+							KillStumpSnailAmuletAction := ss["amuletAction"], IniWrite KillStumpSnailAmuletAction, "settings\nm_config.ini", "Kill", "StumpSnailAmuletAction"
+						}
+						if (ss.HasKey("time")) {
+							KillStumpSnailTime := ss["time"], IniWrite KillStumpSnailTime, "settings\nm_config.ini", "Kill", "StumpSnailTime"
+						}
+					}
+				}
+				OutputDebug "[ahk] killSettings saved to INI"
+			}
+			catch {
+				OutputDebug "[ahk] Error processing killSettings"
+			}
+			; Broadcast the updated state to both UIs (bidirectional sync)
+			OutputDebug "[ahk] Broadcasting updated kill settings to all UIs"
+			SendBootstrapState()
+	}
+}
 
 FormSubmitEvent(source, form) {
     if (source = "webpage") {
@@ -187,6 +1133,128 @@ FormSubmitEvent(source, form) {
         MsgBox(formValues["inputEmail"])
         MsgBox(WebviewWindow.forEach(formValues, form))
     }
+}
+;
+; push a minimal snapshot of AHK state into the WebView so the Bootstrap UI can mirror defaults
+SendBootstrapState() {
+	global MyWindow, FieldName1, FieldName2, FieldName3, FieldPattern1, FieldPattern2, FieldPattern3
+	global FieldPatternSize1, FieldPatternSize2, FieldPatternSize3, FieldPatternReps1, FieldPatternReps2, FieldPatternReps3
+	global FieldDriftCheck1, FieldDriftCheck2, FieldDriftCheck3, FieldPatternShift1, FieldPatternShift2, FieldPatternShift3
+	global FieldPatternInvertFB1, FieldPatternInvertFB2, FieldPatternInvertFB3, FieldPatternInvertLR1, FieldPatternInvertLR2, FieldPatternInvertLR3
+	global FieldRotateDirection1, FieldRotateDirection2, FieldRotateDirection3, FieldRotateTimes1, FieldRotateTimes2, FieldRotateTimes3
+	global FieldUntilMins1, FieldUntilMins2, FieldUntilMins3, FieldUntilPack1, FieldUntilPack2, FieldUntilPack3
+	global FieldReturnType1, FieldReturnType2, FieldReturnType3, FieldSprinklerLoc1, FieldSprinklerLoc2, FieldSprinklerLoc3
+	global FieldSprinklerDist1, FieldSprinklerDist2, FieldSprinklerDist3
+	global ClockCheck, MondoBuffCheck, MondoAction, MondoLootDirection, AntPassCheck, RoboPassCheck, HoneystormCheck, HoneyDisCheck
+	global TreatDisCheck, BlueberryDisCheck, StrawberryDisCheck, CoconutDisCheck, RoyalJellyDisCheck, GlueDisCheck
+	global KillBugRunGatherInterrupt, KillBugRunRespawnTime, KillLadybugsMode, KillRhinoBeetlesMode, KillSpiderMode, KillMantisMode, KillScorpionsMode, KillWerewolfMode
+	global KillViciousBeeEnabled, KillViciousBeeOnlyDaily, KillViciousBeeFieldClover, KillViciousBeeFieldSpider, KillViciousBeeFieldCactus
+	global KillViciousBeeFieldRose, KillViciousBeeFieldMountainTop, KillViciousBeeFieldPepper
+	global KillKingBeetleEnabled, KillKingBeetleWaitBabyLove, KillKingBeetleAmuletAction
+	global KillTunnelBearEnabled, KillTunnelBearWaitBabyLove
+	global KillCocoCrabEnabled
+	global KillCommandoChickEnabled, KillCommandoChickLevel, KillCommandoChickHP, KillCommandoChickTime
+	global KillStumpSnailEnabled, KillStumpSnailHP, KillStumpSnailAmuletAction, KillStumpSnailTime
+	appVersion := "2025-12-30T" A_Hour ":" A_Min ":" A_Sec
+	try {
+		; coerce numeric fields to 0 when blank
+		p1dist := (FieldSprinklerDist1 = "") ? 0 : FieldSprinklerDist1
+		p2dist := (FieldSprinklerDist2 = "") ? 0 : FieldSprinklerDist2
+		p3dist := (FieldSprinklerDist3 = "") ? 0 : FieldSprinklerDist3
+		p1dist := (FieldSprinklerDist1 = "") ? 0 : FieldSprinklerDist1
+		p2dist := (FieldSprinklerDist2 = "") ? 0 : FieldSprinklerDist2
+		p3dist := (FieldSprinklerDist3 = "") ? 0 : FieldSprinklerDist3
+		p1reps := (FieldPatternReps1 = "") ? 0 : FieldPatternReps1
+		p2reps := (FieldPatternReps2 = "") ? 0 : FieldPatternReps2
+		p3reps := (FieldPatternReps3 = "") ? 0 : FieldPatternReps3
+		p1mins := (FieldUntilMins1 = "") ? 0 : FieldUntilMins1
+		p2mins := (FieldUntilMins2 = "") ? 0 : FieldUntilMins2
+		p3mins := (FieldUntilMins3 = "") ? 0 : FieldUntilMins3
+		p1pack := (FieldUntilPack1 = "") ? 0 : FieldUntilPack1
+		p2pack := (FieldUntilPack2 = "") ? 0 : FieldUntilPack2
+		p3pack := (FieldUntilPack3 = "") ? 0 : FieldUntilPack3
+		p1rot := (FieldRotateTimes1 = "") ? 0 : FieldRotateTimes1
+		p2rot := (FieldRotateTimes2 = "") ? 0 : FieldRotateTimes2
+		p3rot := (FieldRotateTimes3 = "") ? 0 : FieldRotateTimes3
+		p1drift := (FieldDriftCheck1 = "") ? 0 : FieldDriftCheck1
+		p2drift := (FieldDriftCheck2 = "") ? 0 : FieldDriftCheck2
+		p3drift := (FieldDriftCheck3 = "") ? 0 : FieldDriftCheck3
+		p1shift := (FieldPatternShift1 = "") ? 0 : FieldPatternShift1
+		p2shift := (FieldPatternShift2 = "") ? 0 : FieldPatternShift2
+		p3shift := (FieldPatternShift3 = "") ? 0 : FieldPatternShift3
+		p1fb := (FieldPatternInvertFB1 = "") ? 0 : FieldPatternInvertFB1
+		p2fb := (FieldPatternInvertFB2 = "") ? 0 : FieldPatternInvertFB2
+		p3fb := (FieldPatternInvertFB3 = "") ? 0 : FieldPatternInvertFB3
+		p1lr := (FieldPatternInvertLR1 = "") ? 0 : FieldPatternInvertLR1
+		p2lr := (FieldPatternInvertLR2 = "") ? 0 : FieldPatternInvertLR2
+		p3lr := (FieldPatternInvertLR3 = "") ? 0 : FieldPatternInvertLR3
+		; build field JSON objects manually to avoid Format brace issues
+		f1 := '{"num":1,"field":"' StrLower(FieldName1) '","pattern":"' FieldPattern1 '","size":"' FieldPatternSize1 '","reps":' p1reps ',"drift":' p1drift ',"shift":' p1shift ',"invertfb":' p1fb ',"invertlr":' p1lr ',"rotdir":"' FieldRotateDirection1 '","rottime":' p1rot ',"mins":' p1mins ',"pack":' p1pack ',"return":"' FieldReturnType1 '","sprinkloc":"' FieldSprinklerLoc1 '","sprdist":' p1dist '}'
+		f2 := '{"num":2,"field":"' StrLower(FieldName2) '","pattern":"' FieldPattern2 '","size":"' FieldPatternSize2 '","reps":' p2reps ',"drift":' p2drift ',"shift":' p2shift ',"invertfb":' p2fb ',"invertlr":' p2lr ',"rotdir":"' FieldRotateDirection2 '","rottime":' p2rot ',"mins":' p2mins ',"pack":' p2pack ',"return":"' FieldReturnType2 '","sprinkloc":"' FieldSprinklerLoc2 '","sprdist":' p2dist '}'
+		f3 := '{"num":3,"field":"' StrLower(FieldName3) '","pattern":"' FieldPattern3 '","size":"' FieldPatternSize3 '","reps":' p3reps ',"drift":' p3drift ',"shift":' p3shift ',"invertfb":' p3fb ',"invertlr":' p3lr ',"rotdir":"' FieldRotateDirection3 '","rottime":' p3rot ',"mins":' p3mins ',"pack":' p3pack ',"return":"' FieldReturnType3 '","sprinkloc":"' FieldSprinklerLoc3 '","sprdist":' p3dist '}'
+		cClock := (ClockCheck="") ? 0 : ClockCheck
+		cMondo := (MondoBuffCheck="") ? 0 : MondoBuffCheck
+		cAnt := (AntPassCheck="") ? 0 : AntPassCheck
+		cRobo := (RoboPassCheck="") ? 0 : RoboPassCheck
+		cHoney := (HoneyDisCheck="") ? 0 : HoneyDisCheck
+		cTreat := (TreatDisCheck="") ? 0 : TreatDisCheck
+		cBlue := (BlueberryDisCheck="") ? 0 : BlueberryDisCheck
+		cStraw := (StrawberryDisCheck="") ? 0 : StrawberryDisCheck
+		cCoco := (CoconutDisCheck="") ? 0 : CoconutDisCheck
+		cRoyal := (RoyalJellyDisCheck="") ? 0 : RoyalJellyDisCheck
+		cGlue := (GlueDisCheck="") ? 0 : GlueDisCheck
+		cHoneyStorm := (HoneystormCheck="") ? 0 : HoneystormCheck
+		; build collect JSON object manually
+		col := '{"ClockCheck":' cClock ',"MondoBuffCheck":' cMondo ',"MondoAction":"' MondoAction '","MondoLootDirection":"' MondoLootDirection '","AntPassCheck":' cAnt ',"RoboPassCheck":' cRobo ',"HoneystormCheck":' cHoneyStorm ',"HoneyDisCheck":' cHoney ',"TreatDisCheck":' cTreat ',"BlueberryDisCheck":' cBlue ',"StrawberryDisCheck":' cStraw ',"CoconutDisCheck":' cCoco ',"RoyalJellyDisCheck":' cRoyal ',"GlueDisCheck":' cGlue '}'
+		OutputDebug "[ahk] collect payload: " col
+		
+		; build kill JSON object - coerce values to correct types
+		kBugRunGatherInt := (KillBugRunGatherInterrupt="") ? 0 : KillBugRunGatherInterrupt
+		kBugRunRespawnTime := (KillBugRunRespawnTime="") ? 0 : KillBugRunRespawnTime
+		kLadybugsMode := (KillLadybugsMode="") ? "Kill+Loot" : KillLadybugsMode
+		kRhinoBeetlesMode := (KillRhinoBeetlesMode="") ? "Kill+Loot" : KillRhinoBeetlesMode
+		kSpiderMode := (KillSpiderMode="") ? "Kill+Loot" : KillSpiderMode
+		kMantisMode := (KillMantisMode="") ? "Kill+Loot" : KillMantisMode
+		kScorpionsMode := (KillScorpionsMode="") ? "Kill+Loot" : KillScorpionsMode
+		kWerewolfMode := (KillWerewolfMode="") ? "Kill+Loot" : KillWerewolfMode
+		
+		kViciousBeeEnabled := (KillViciousBeeEnabled="") ? 0 : KillViciousBeeEnabled
+		kViciousBeeOnlyDaily := (KillViciousBeeOnlyDaily="") ? 0 : KillViciousBeeOnlyDaily
+		kVBFieldClover := (KillViciousBeeFieldClover="") ? 0 : KillViciousBeeFieldClover
+		kVBFieldSpider := (KillViciousBeeFieldSpider="") ? 0 : KillViciousBeeFieldSpider
+		kVBFieldCactus := (KillViciousBeeFieldCactus="") ? 0 : KillViciousBeeFieldCactus
+		kVBFieldRose := (KillViciousBeeFieldRose="") ? 0 : KillViciousBeeFieldRose
+		kVBFieldMountainTop := (KillViciousBeeFieldMountainTop="") ? 0 : KillViciousBeeFieldMountainTop
+		kVBFieldPepper := (KillViciousBeeFieldPepper="") ? 0 : KillViciousBeeFieldPepper
+		
+		kKBEnabled := (KillKingBeetleEnabled="") ? 0 : KillKingBeetleEnabled
+		kKBWaitBabyLove := (KillKingBeetleWaitBabyLove="") ? 0 : KillKingBeetleWaitBabyLove
+		kKBAmuletAction := (KillKingBeetleAmuletAction="") ? "Keep Old" : KillKingBeetleAmuletAction
+		
+		kTBEnabled := (KillTunnelBearEnabled="") ? 0 : KillTunnelBearEnabled
+		kTBWaitBabyLove := (KillTunnelBearWaitBabyLove="") ? 0 : KillTunnelBearWaitBabyLove
+		
+		kCCEnabled := (KillCocoCrabEnabled="") ? 0 : KillCocoCrabEnabled
+		
+		kCCHEnabled := (KillCommandoChickEnabled="") ? 0 : KillCommandoChickEnabled
+		kCCHLevel := (KillCommandoChickLevel="") ? 10 : KillCommandoChickLevel
+		kCCHHP := (KillCommandoChickHP="") ? 250000 : KillCommandoChickHP
+		kCCHTime := (KillCommandoChickTime="") ? "5m" : KillCommandoChickTime
+		
+		kSSEnabled := (KillStumpSnailEnabled="") ? 0 : KillStumpSnailEnabled
+		kSSHP := (KillStumpSnailHP="") ? 30000000 : KillStumpSnailHP
+		kSSAmuletAction := (KillStumpSnailAmuletAction="") ? "Keep Old" : KillStumpSnailAmuletAction
+		kSSTime := (KillStumpSnailTime="") ? "5m" : KillStumpSnailTime
+		
+		; build kill JSON manually
+		kill := '{"bugRun":{"allowGatherInterrupt":' kBugRunGatherInt ',"respawnTime":' kBugRunRespawnTime ',"loot":{"ladybugs":"' kLadybugsMode '","rhinoBeetles":"' kRhinoBeetlesMode '","spider":"' kSpiderMode '","mantis":"' kMantisMode '","scorpions":"' kScorpionsMode '","werewolf":"' kWerewolfMode '"}},"stingers":{"killViciousBee":' kViciousBeeEnabled ',"onlyDaily":' kViciousBeeOnlyDaily ',"fields":{"clover":' kVBFieldClover ',"spider":' kVBFieldSpider ',"cactus":' kVBFieldCactus ',"rose":' kVBFieldRose ',"mountainTop":' kVBFieldMountainTop ',"pepper":' kVBFieldPepper '}},"bosses":{"kingBeetle":{"enabled":' kKBEnabled ',"waitBabyLove":' kKBWaitBabyLove ',"amuletAction":"' kKBAmuletAction '"},"tunnelBear":{"enabled":' kTBEnabled ',"waitBabyLove":' kTBWaitBabyLove '},"cocoCrab":{"enabled":' kCCEnabled '},"commandoChick":{"enabled":' kCCHEnabled ',"level":' kCCHLevel ',"hp":' kCCHHP ',"time":"' kCCHTime '"},"stumpSnail":{"enabled":' kSSEnabled ',"hp":' kSSHP ',"amuletAction":"' kSSAmuletAction '","time":"' kSSTime '"}}}'
+		OutputDebug "[ahk] kill payload: " kill
+		
+		; build full init JSON manually
+		json := '{"type":"init","version":"' appVersion '","gather":[' f1 ',' f2 ',' f3 '],"collect":' col ',"kill":' kill '}'
+		OutputDebug "[ahk] send init: " json
+		MyWindow.PostWebMessageAsString(json)
+	}
 }
 ;///////////////////////////////////////////////////////////////////////////////////////////
 ; END WebView2 GUI
@@ -934,6 +2002,7 @@ nm_importConfig()
 	file.Write(ini), file.Close()
 }
 nm_importConfig()
+SetTimer SendBootstrapState, -1000
 
 nm_ReadIni(path)
 {
@@ -2840,52 +3909,51 @@ MainGui.Add("Text", "x16 y62 +BackgroundTrans Hidden vTextMonsterRespawnPercent"
 MainGui.Add("Text", "x52 y55 w80 +BackgroundTrans +Center vTextMonsterRespawn Hidden", "Monster Respawn Time")
 MainGui.Add("Edit", "x24 y61 w18 h16 Limit2 number vMonsterRespawnTime Disabled Hidden", ValidateNumber(&MonsterRespawnTime)).OnEvent("Change", nm_MonsterRespawnTime)
 MainGui.Add("Button", "x128 y63 w12 h14 vMonsterRespawnTimeHelp Disabled Hidden", "?").OnEvent("Click", nm_MonsterRespawnTimeHelp)
-GuiCtrl := MainGui.Add("CheckBox", "x16 y82 w125 h15 vBugrunInterruptCheck Disabled Hidden Checked" BugrunInterruptCheck, "Allow Gather Interrupt")
-GuiCtrl.Section := "Collect", GuiCtrl.OnEvent("Click", nm_saveConfig)
+(GuiCtrl := MainGui.Add("CheckBox", "x16 y82 w125 h15 vBugrunInterruptCheck Disabled Hidden Checked" BugrunInterruptCheck, "Allow Gather Interrupt")).Section := "Kill", GuiCtrl.OnEvent("Click", nm_saveConfig)
 
 MainGui.Add("Text", "x16 y100 +BackgroundTrans Hidden vTextLoot", "Loot")
 MainGui.Add("Text", "x49 y100 +BackgroundTrans Hidden vTextKill", "Kill")
 MainGui.Add("Text", "x15 y114 w114 h1 0x7 Hidden vTextLineBugRun1")
 MainGui.Add("Text", "x40 y100 w1 h124 0x7 Hidden vTextLineBugRun2")
-(GuiCtrl := MainGui.Add("CheckBox", "x20 y120 w13 h13 vBugrunLadybugsLoot Disabled Hidden Checked" BugrunLadybugsLoot)).Section := "Collect", GuiCtrl.OnEvent("Click", nm_saveConfig)
-(GuiCtrl := MainGui.Add("CheckBox", "xp yp+18 w13 h13 vBugrunRhinoBeetlesLoot Disabled Hidden Checked" BugrunRhinoBeetlesLoot)).Section := "Collect", GuiCtrl.OnEvent("Click", nm_saveConfig)
-(GuiCtrl := MainGui.Add("CheckBox", "xp yp+18 w13 h13 vBugrunSpiderLoot Disabled Hidden Checked" BugrunSpiderLoot)).Section := "Collect", GuiCtrl.OnEvent("Click", nm_saveConfig)
-(GuiCtrl := MainGui.Add("CheckBox", "xp yp+18 w13 h13 vBugrunMantisLoot Disabled Hidden Checked" BugrunMantisLoot)).Section := "Collect", GuiCtrl.OnEvent("Click", nm_saveConfig)
-(GuiCtrl := MainGui.Add("CheckBox", "xp yp+18 w13 h13 vBugrunScorpionsLoot Disabled Hidden Checked" BugrunScorpionsLoot)).Section := "Collect", GuiCtrl.OnEvent("Click", nm_saveConfig)
-(GuiCtrl := MainGui.Add("CheckBox", "xp yp+18 w13 h13 vBugrunWerewolfLoot Disabled Hidden Checked" BugrunWerewolfLoot)).Section := "Collect", GuiCtrl.OnEvent("Click", nm_saveConfig)
-(GuiCtrl := MainGui.Add("CheckBox", "x48 y120 vBugrunLadybugsCheck Disabled Hidden Checked" BugrunLadybugsCheck, "Ladybugs")).Section := "Collect", GuiCtrl.OnEvent("Click", nm_saveConfig)
-(GuiCtrl := MainGui.Add("CheckBox", "xp yp+18 vBugrunRhinoBeetlesCheck Disabled Hidden Checked" BugrunRhinoBeetlesCheck, "Rhino Beetles")).Section := "Collect", GuiCtrl.OnEvent("Click", nm_saveConfig)
-(GuiCtrl := MainGui.Add("CheckBox", "xp yp+18 vBugrunSpiderCheck Disabled Hidden Checked" BugrunSpiderCheck, "Spider")).Section := "Collect", GuiCtrl.OnEvent("Click", nm_saveConfig)
-(GuiCtrl := MainGui.Add("CheckBox", "xp yp+18 vBugrunMantisCheck Disabled Hidden Checked" BugrunMantisCheck, "Mantis")).Section := "Collect", GuiCtrl.OnEvent("Click", nm_saveConfig)
-(GuiCtrl := MainGui.Add("CheckBox", "xp yp+18 vBugrunScorpionsCheck Disabled Hidden Checked" BugrunScorpionsCheck, "Scorpions")).Section := "Collect", GuiCtrl.OnEvent("Click", nm_saveConfig)
-(GuiCtrl := MainGui.Add("CheckBox", "xp yp+18 vBugrunWerewolfCheck Disabled Hidden Checked" BugrunWerewolfCheck, "Werewolf")).Section := "Collect", GuiCtrl.OnEvent("Click", nm_saveConfig)
+(GuiCtrl := MainGui.Add("CheckBox", "x20 y120 w13 h13 vBugrunLadybugsLoot Disabled Hidden Checked" BugrunLadybugsLoot)).Section := "Kill", GuiCtrl.OnEvent("Click", nm_saveBugrunLoot)
+(GuiCtrl := MainGui.Add("CheckBox", "xp yp+18 w13 h13 vBugrunRhinoBeetlesLoot Disabled Hidden Checked" BugrunRhinoBeetlesLoot)).Section := "Kill", GuiCtrl.OnEvent("Click", nm_saveBugrunLoot)
+(GuiCtrl := MainGui.Add("CheckBox", "xp yp+18 w13 h13 vBugrunSpiderLoot Disabled Hidden Checked" BugrunSpiderLoot)).Section := "Kill", GuiCtrl.OnEvent("Click", nm_saveBugrunLoot)
+(GuiCtrl := MainGui.Add("CheckBox", "xp yp+18 w13 h13 vBugrunMantisLoot Disabled Hidden Checked" BugrunMantisLoot)).Section := "Kill", GuiCtrl.OnEvent("Click", nm_saveBugrunLoot)
+(GuiCtrl := MainGui.Add("CheckBox", "xp yp+18 w13 h13 vBugrunScorpionsLoot Disabled Hidden Checked" BugrunScorpionsLoot)).Section := "Kill", GuiCtrl.OnEvent("Click", nm_saveBugrunLoot)
+(GuiCtrl := MainGui.Add("CheckBox", "xp yp+18 w13 h13 vBugrunWerewolfLoot Disabled Hidden Checked" BugrunWerewolfLoot)).Section := "Kill", GuiCtrl.OnEvent("Click", nm_saveBugrunLoot)
+(GuiCtrl := MainGui.Add("CheckBox", "x48 y120 vBugrunLadybugsCheck Disabled Hidden Checked" BugrunLadybugsCheck, "Ladybugs")).Section := "Kill", GuiCtrl.OnEvent("Click", nm_saveBugrunCheck)
+(GuiCtrl := MainGui.Add("CheckBox", "xp yp+18 vBugrunRhinoBeetlesCheck Disabled Hidden Checked" BugrunRhinoBeetlesCheck, "Rhino Beetles")).Section := "Kill", GuiCtrl.OnEvent("Click", nm_saveBugrunCheck)
+(GuiCtrl := MainGui.Add("CheckBox", "xp yp+18 vBugrunSpiderCheck Disabled Hidden Checked" BugrunSpiderCheck, "Spider")).Section := "Kill", GuiCtrl.OnEvent("Click", nm_saveBugrunCheck)
+(GuiCtrl := MainGui.Add("CheckBox", "xp yp+18 vBugrunMantisCheck Disabled Hidden Checked" BugrunMantisCheck, "Mantis")).Section := "Kill", GuiCtrl.OnEvent("Click", nm_saveBugrunCheck)
+(GuiCtrl := MainGui.Add("CheckBox", "xp yp+18 vBugrunScorpionsCheck Disabled Hidden Checked" BugrunScorpionsCheck, "Scorpions")).Section := "Kill", GuiCtrl.OnEvent("Click", nm_saveBugrunCheck)
+(GuiCtrl := MainGui.Add("CheckBox", "xp yp+18 vBugrunWerewolfCheck Disabled Hidden Checked" BugrunWerewolfCheck, "Werewolf")).Section := "Kill", GuiCtrl.OnEvent("Click", nm_saveBugrunCheck)
 
 ;stingers
 MainGui.SetFont("w700")
 MainGui.Add("GroupBox", "x149 y42 w341 h60 vStingersGroupBox Hidden", "Stingers")
 MainGui.SetFont("s8 cDefault Norm", "Tahoma")
 MainGui.Add("CheckBox", "x217 y43 vStingerCheck Disabled Hidden Checked" StingerCheck, "Kill Vicious Bee").OnEvent("Click", nm_saveStingers)
-(GuiCtrl := MainGui.Add("CheckBox", "x315 y43 vStingerDailyBonusCheck Disabled Hidden Checked" StingerDailyBonusCheck, "Only Daily Bonus")).Section := "Collect", GuiCtrl.OnEvent("Click", nm_saveConfig)
+(GuiCtrl := MainGui.Add("CheckBox", "x315 y43 vStingerDailyBonusCheck Disabled Hidden Checked" StingerDailyBonusCheck, "Only Daily Bonus")).Section := "Kill", GuiCtrl.OnEvent("Click", nm_saveConfig)
 MainGui.Add("Text", "x168 y69 +BackgroundTrans Hidden vTextFields", "Fields:")
-(GuiCtrl := MainGui.Add("CheckBox", "x220 y62 vStingerCloverCheck Disabled Hidden Checked" StingerCloverCheck, "Clover")).Section := "Collect", GuiCtrl.OnEvent("Click", nm_saveConfig)
-(GuiCtrl := MainGui.Add("CheckBox", "x220 y80 vStingerSpiderCheck Disabled Hidden Checked" StingerSpiderCheck, "Spider")).Section := "Collect", GuiCtrl.OnEvent("Click", nm_saveConfig)
-(GuiCtrl := MainGui.Add("CheckBox", "x305 y62 vStingerCactusCheck Disabled Hidden Checked" StingerCactusCheck, "Cactus")).Section := "Collect", GuiCtrl.OnEvent("Click", nm_saveConfig)
-(GuiCtrl := MainGui.Add("CheckBox", "x305 y80 vStingerRoseCheck Disabled Hidden Checked" StingerRoseCheck, "Rose")).Section := "Collect", GuiCtrl.OnEvent("Click", nm_saveConfig)
-(GuiCtrl := MainGui.Add("CheckBox", "x390 y62 vStingerMountainTopCheck Disabled Hidden Checked" StingerMountainTopCheck, "Mountain Top")).Section := "Collect", GuiCtrl.OnEvent("Click", nm_saveConfig)
-(GuiCtrl := MainGui.Add("CheckBox", "x390 y80 vStingerPepperCheck Disabled Hidden Checked" StingerPepperCheck, "Pepper")).Section := "Collect", GuiCtrl.OnEvent("Click", nm_saveConfig)
+(GuiCtrl := MainGui.Add("CheckBox", "x220 y62 vStingerCloverCheck Disabled Hidden Checked" StingerCloverCheck, "Clover")).Section := "Kill", GuiCtrl.OnEvent("Click", nm_saveConfig)
+(GuiCtrl := MainGui.Add("CheckBox", "x220 y80 vStingerSpiderCheck Disabled Hidden Checked" StingerSpiderCheck, "Spider")).Section := "Kill", GuiCtrl.OnEvent("Click", nm_saveConfig)
+(GuiCtrl := MainGui.Add("CheckBox", "x305 y62 vStingerCactusCheck Disabled Hidden Checked" StingerCactusCheck, "Cactus")).Section := "Kill", GuiCtrl.OnEvent("Click", nm_saveConfig)
+(GuiCtrl := MainGui.Add("CheckBox", "x305 y80 vStingerRoseCheck Disabled Hidden Checked" StingerRoseCheck, "Rose")).Section := "Kill", GuiCtrl.OnEvent("Click", nm_saveConfig)
+(GuiCtrl := MainGui.Add("CheckBox", "x390 y62 vStingerMountainTopCheck Disabled Hidden Checked" StingerMountainTopCheck, "Mountain Top")).Section := "Kill", GuiCtrl.OnEvent("Click", nm_saveConfig)
+(GuiCtrl := MainGui.Add("CheckBox", "x390 y80 vStingerPepperCheck Disabled Hidden Checked" StingerPepperCheck, "Pepper")).Section := "Kill", GuiCtrl.OnEvent("Click", nm_saveConfig)
 
 ;bosses
 MainGui.SetFont("w700")
 MainGui.Add("GroupBox", "x149 y104 w341 h126 vBossesGroupBox Hidden", "Bosses")
 MainGui.SetFont("s8 cDefault Norm", "Tahoma")
 MainGui.Add("Button", "x209 y104 w12 h14 vBossConfigHelp Disabled Hidden", "?").OnEvent("Click", nm_BossConfigHelp)
-(GuiCtrl := MainGui.Add("CheckBox", "x152 y123 vKingBeetleCheck Disabled Hidden Checked" KingBeetleCheck, "King Beetle")).Section := "Collect", GuiCtrl.OnEvent("Click", nm_saveConfig)
-(GuiCtrl := MainGui.Add("CheckBox", "xp yp+21 vTunnelBearCheck Disabled Hidden Checked" TunnelBearCheck, "Tunnel Bear")).Section := "Collect", GuiCtrl.OnEvent("Click", nm_saveConfig)
+(GuiCtrl := MainGui.Add("CheckBox", "x152 y123 vKingBeetleCheck Disabled Hidden Checked" KingBeetleCheck, "King Beetle")).Section := "Kill", GuiCtrl.OnEvent("Click", nm_saveConfig)
+(GuiCtrl := MainGui.Add("CheckBox", "xp yp+21 vTunnelBearCheck Disabled Hidden Checked" TunnelBearCheck, "Tunnel Bear")).Section := "Kill", GuiCtrl.OnEvent("Click", nm_saveConfig)
 MainGui.Add("CheckBox", "xp yp+21 vCocoCrabCheck Disabled Hidden Checked" CocoCrabCheck, "Coco Crab").OnEvent("Click", nm_CocoCrabCheck)
-(GuiCtrl := MainGui.Add("CheckBox", "xp yp+21 vStumpSnailCheck Disabled Hidden Checked" StumpSnailCheck, "Stump Snail")).Section := "Collect", GuiCtrl.OnEvent("Click", nm_saveConfig)
-(GuiCtrl := MainGui.Add("CheckBox", "xp yp+21 vCommandoCheck Disabled Hidden Checked" CommandoCheck, "Commando")).Section := "Collect", GuiCtrl.OnEvent("Click", nm_saveConfig)
-(GuiCtrl := MainGui.Add("CheckBox", "x270 y123 w13 h13 vKingBeetleBabyCheck Disabled Hidden Checked" KingBeetleBabyCheck)).Section := "Collect", GuiCtrl.OnEvent("Click", nm_saveConfig)
-(GuiCtrl := MainGui.Add("CheckBox", "xp yp+21 w13 h13 vTunnelBearBabyCheck Disabled Hidden Checked" TunnelBearBabyCheck)).Section := "Collect", GuiCtrl.OnEvent("Click", nm_saveConfig)
+(GuiCtrl := MainGui.Add("CheckBox", "xp yp+21 vStumpSnailCheck Disabled Hidden Checked" StumpSnailCheck, "Stump Snail")).Section := "Kill", GuiCtrl.OnEvent("Click", nm_saveConfig)
+(GuiCtrl := MainGui.Add("CheckBox", "xp yp+21 vCommandoCheck Disabled Hidden Checked" CommandoCheck, "Commando")).Section := "Kill", GuiCtrl.OnEvent("Click", nm_saveConfig)
+(GuiCtrl := MainGui.Add("CheckBox", "x270 y123 w13 h13 vKingBeetleBabyCheck Disabled Hidden Checked" KingBeetleBabyCheck)).Section := "Kill", GuiCtrl.OnEvent("Click", nm_saveConfig)
+(GuiCtrl := MainGui.Add("CheckBox", "xp yp+21 w13 h13 vTunnelBearBabyCheck Disabled Hidden Checked" TunnelBearBabyCheck)).Section := "Kill", GuiCtrl.OnEvent("Click", nm_saveConfig)
 hBM := Gdip_CreateHBITMAPFromBitmap(bitmaps["babylovegui"])
 MainGui.Add("Picture", "+BackgroundTrans vBabyLovePicture1 x286 y120 w18 h18 Hidden", "HBITMAP:*" hBM)
 MainGui.Add("Picture", "+BackgroundTrans vBabyLovePicture2 xp yp+21 w18 h18 Hidden", "HBITMAP:*" hBM)
@@ -4121,6 +5189,100 @@ nm_TabMiscUnLock(){
 	MainGui["AutoMutatorButton"].Enabled := 1
 }
 
+; Handle Bugrun Kill checkbox changes (the main "kill this bug" checkbox)
+nm_saveBugrunCheck(GuiCtrl, *) {
+	global
+	local bugType, modeVar, lootVar, mode, newMode, settingKey
+	
+	; Map checkbox name to bug type (remove "Bugrun" prefix and "Check" suffix)
+	bugType := StrReplace(StrReplace(GuiCtrl.Name, "Bugrun", ""), "Check", "")
+	modeVar := "Kill" bugType "Mode"
+	lootVar := "Bugrun" bugType "Loot"
+	
+	; Get current mode and loot checkbox values
+	mode := %modeVar%
+	lootChecked := MainGui[lootVar].Value
+	
+	; Determine new mode based on Kill checkbox and Loot checkbox
+	if (GuiCtrl.Value = 1) {
+		; Kill checkbox is now ON
+		; If Loot is checked, mode is "Kill+Loot", otherwise "Kill"
+		newMode := lootChecked ? "Kill+Loot" : "Kill"
+	} else {
+		; Kill checkbox is now OFF
+		newMode := "Off"
+	}
+	
+	; Update global variable
+	%modeVar% := newMode
+	
+	; Save to INI
+	IniWrite newMode, "settings\nm_config.ini", "Kill", (bugType "Mode")
+	
+	; Broadcast to Web with the correct setting key (KillXxxMode)
+	settingKey := "Kill" bugType "Mode"
+	msg := '{"type":"kill","key":"' settingKey '","value":"' newMode '"}'
+	OutputDebug "[ahk] send kill msg: " msg
+	try {
+		if (IsSet(MyWindow)) {
+			MyWindow.PostWebMessageAsString(msg)
+		} else {
+			OutputDebug "[ahk] ERROR: MyWindow not initialized for bugrun broadcast"
+		}
+	} catch {
+		OutputDebug "[ahk] ERROR broadcasting bugrun"
+	}
+}
+
+; Handle Bugrun loot checkbox changes - convert to mode strings
+nm_saveBugrunLoot(GuiCtrl, *) {
+	global
+	local bugType, modeVar, killVar, mode, newMode, settingKey
+	
+	; Map checkbox name to bug type (remove "Bugrun" prefix and "Loot" suffix)
+	bugType := StrReplace(StrReplace(GuiCtrl.Name, "Bugrun", ""), "Loot", "")
+	modeVar := "Kill" bugType "Mode"
+	killVar := "Bugrun" bugType "Check"
+	
+	; Get current mode value
+	mode := %modeVar%
+	
+	; Convert checkbox value (0/1) to mode string (Kill+Loot vs Kill/Off)
+	; If checkbox is checked (1), mode is Kill+Loot
+	; If checkbox is unchecked (0), keep the current Kill or Off setting
+	if (GuiCtrl.Value = 1) {
+		newMode := "Kill+Loot"
+	} else {
+		; Keep the current non-Loot setting (either "Kill" or "Off")
+		newMode := (mode = "Off") ? "Off" : "Kill"
+	}
+	
+	; Update global variable
+	%modeVar% := newMode
+	
+	; Update Kill checkbox based on new mode (Off=0, Kill/Kill+Loot=1)
+	if (newMode != "Off" && MainGui[killVar].Value = 0) {
+		MainGui[killVar].Value := 1
+	}
+	
+	; Save to INI
+	IniWrite newMode, "settings\nm_config.ini", "Kill", (bugType "Mode")
+	
+	; Broadcast to Web with the correct setting key (KillXxxMode, not BugrunXxxLoot)
+	settingKey := "Kill" bugType "Mode"
+	msg := '{"type":"kill","key":"' settingKey '","value":"' newMode '"}'
+	OutputDebug "[ahk] send kill msg: " msg
+	try {
+		if (IsSet(MyWindow)) {
+			MyWindow.PostWebMessageAsString(msg)
+		} else {
+			OutputDebug "[ahk] ERROR: MyWindow not initialized for bugrun loot broadcast"
+		}
+	} catch {
+		OutputDebug "[ahk] ERROR broadcasting bugrun loot"
+	}
+}
+
 ;update config
 nm_saveConfig(GuiCtrl, *){
 	global
@@ -4131,6 +5293,16 @@ nm_saveConfig(GuiCtrl, *){
 		%GuiCtrl.Name% := GuiCtrl.Value
 	}
 	IniWrite %GuiCtrl.Name%, "settings\nm_config.ini", GuiCtrl.Section, GuiCtrl.Name
+	if (GuiCtrl.Section = "Collect") {
+		val := GuiCtrl.Value
+		try nm_PostCollectUpdate(GuiCtrl.Name, val)
+		OutputDebug "[ahk] send collect " GuiCtrl.Name "=" val
+	}
+	else if (GuiCtrl.Section = "Kill") {
+		val := GuiCtrl.Value
+		try nm_PostKillUpdate(GuiCtrl.Name, val)
+		OutputDebug "[ahk] send kill " GuiCtrl.Name "=" val
+	}
 }
 
 ;link buttons
@@ -5018,17 +6190,45 @@ nm_MemoryMatchOptions(*){
 ;kill
 nm_BugrunCheck(*){
 	global
-	local ctrl
+	local ctrl, bugType, modeVar, newMode
 	static ctrlList := ["BugrunInterruptCheck", "BugrunLadybugsCheck", "BugrunRhinoBeetlesCheck", "BugrunSpiderCheck", "BugrunMantisCheck", "BugrunScorpionsCheck", "BugrunWerewolfCheck"
 		, "BugrunLadybugsLoot", "BugrunRhinoBeetlesLoot", "BugrunSpiderLoot", "BugrunMantisLoot", "BugrunScorpionsLoot", "BugrunWerewolfLoot"]
 
 	for ctrl in ctrlList {
 		MainGui[ctrl].Value := %ctrl% := MainGui["BugrunCheck"].Value
 		IniWrite %ctrl%, "settings\nm_config.ini", "Collect", ctrl
+		
+		; Broadcast to Web UI for Kill/Loot checkboxes
+		if (InStr(ctrl, "Check") && ctrl != "BugrunInterruptCheck") {
+			; Extract bug type and broadcast mode
+			bugType := StrReplace(StrReplace(ctrl, "Bugrun", ""), "Check", "")
+			newMode := MainGui["BugrunCheck"].Value ? "Kill" : "Off"
+			msg := '{"type":"kill","key":"Kill' bugType 'Mode","value":"' newMode '"}'
+			OutputDebug "[ahk] send kill msg (Select All): " msg
+			try {
+				if (IsSet(MyWindow))
+					MyWindow.PostWebMessageAsString(msg)
+			} catch {
+				OutputDebug "[ahk] ERROR broadcasting Select All"
+			}
+		}
+		else if (InStr(ctrl, "Loot")) {
+			; Loot checkbox - if checked, set to Kill+Loot, otherwise keep current mode
+			bugType := StrReplace(StrReplace(ctrl, "Bugrun", ""), "Loot", "")
+			newMode := MainGui["BugrunCheck"].Value ? "Kill+Loot" : "Off"
+			msg := '{"type":"kill","key":"Kill' bugType 'Mode","value":"' newMode '"}'
+			OutputDebug "[ahk] send kill msg (Select All): " msg
+			try {
+				if (IsSet(MyWindow))
+					MyWindow.PostWebMessageAsString(msg)
+			} catch {
+				OutputDebug "[ahk] ERROR broadcasting Select All"
+			}
+		}
 	}
 }
 nm_MonsterRespawnTime(GuiCtrl, *){
-	global MonsterRespawnTime
+	global MonsterRespawnTime, KillBugRunRespawnTime
 	p := EditGetCurrentCol(GuiCtrl)
 	NewMonsterRespawnTime := GuiCtrl.Value
 
@@ -5040,8 +6240,18 @@ nm_MonsterRespawnTime(GuiCtrl, *){
 	}
 	else
 	{
+		; Handle blank value - default to 0
+		if (NewMonsterRespawnTime = "")
+			NewMonsterRespawnTime := 0
+		
 		MonsterRespawnTime := NewMonsterRespawnTime
+		KillBugRunRespawnTime := NewMonsterRespawnTime
 		IniWrite MonsterRespawnTime, "settings\nm_config.ini", "Collect", "MonsterRespawnTime"
+		IniWrite KillBugRunRespawnTime, "settings\nm_config.ini", "Kill", "BugRunRespawnTime"
+		; Broadcast to Web UI
+		msg := '{"type":"kill","key":"KillBugRunRespawnTime","value":' NewMonsterRespawnTime '}'
+		OutputDebug "[ahk] send kill msg: " msg
+		try MyWindow.PostWebMessageAsString(msg)
 	}
 }
 nm_MonsterRespawnTimeHelp(*){ ; monster respawn time information
@@ -5062,10 +6272,20 @@ nm_saveStingers(*){
 	global
 	static fields := ["Pepper","MountainTop","Rose","Cactus","Spider","Clover"]
 	local field
-	IniWrite (StingerCheck := MainGui["StingerCheck"].Value), "settings\nm_config.ini", "Collect", "StingerCheck"
-	for field in fields
+	IniWrite (StingerCheck := MainGui["StingerCheck"].Value), "settings\nm_config.ini", "Kill", "ViciousBeeEnabled"
+	try nm_PostKillUpdate("StingerCheck", StingerCheck)
+	for field in fields {
 		MainGui["Stinger" field "Check"].Enabled := StingerCheck
+		; Broadcast field changes with proper control name mapping
+		fieldVal := MainGui["Stinger" field "Check"].Value
+		IniWrite fieldVal, "settings\nm_config.ini", "Kill", ("ViciousBeeField" field)
+		try nm_PostKillUpdate("Stinger" field "Check", fieldVal)
+	}
 	MainGui["StingerDailyBonusCheck"].Enabled := StingerCheck
+	; Broadcast the Daily Bonus checkbox status when Stinger checkbox changes
+	dailyVal := MainGui["StingerDailyBonusCheck"].Value
+	IniWrite dailyVal, "settings\nm_config.ini", "Kill", "ViciousBeeOnlyDaily"
+	try nm_PostKillUpdate("StingerDailyBonusCheck", dailyVal)
 }
 nm_BossConfigHelp(*){ ; monster respawn time information
 	MsgBox "
@@ -5091,22 +6311,58 @@ nm_BossConfigHelp(*){ ; monster respawn time information
 }
 nm_saveAmulet(GuiCtrl, *){
 	global
-	MainGui[GuiCtrl.Name "Text"].Text := ((%GuiCtrl.Name% := GuiCtrl.Value) = 1) ? " Keep Old" : "Do Nothing"
-	IniWrite GuiCtrl.Value, "settings\nm_config.ini", "Collect", GuiCtrl.Name
+	; Get current checkbox value
+	currentValue := GuiCtrl.Value
+	; Update text label based on checkbox
+	MainGui[GuiCtrl.Name "Text"].Text := (currentValue = 1) ? " Keep Old" : "Do Nothing"
+	; Store in global variable
+	%GuiCtrl.Name% := currentValue
+	; Map amulet control to action setting (1 = "Keep Old", 0 = "Do Nothing")
+	amuletValue := currentValue = 1 ? "Keep Old" : "Do Nothing"
+	; Save to Kill section
+	IniWrite amuletValue, "settings\nm_config.ini", "Kill", (GuiCtrl.Name = "KingBeetleAmuletMode" ? "KingBeetleAmuletAction" : "StumpSnailAmuletAction")
+	; Also update Collect section for backward compatibility
+	IniWrite currentValue, "settings\nm_config.ini", "Collect", GuiCtrl.Name
+	; Broadcast action string to Web UI
+	key := GuiCtrl.Name = "KingBeetleAmuletMode" ? "KillKingBeetleAmuletAction" : "KillStumpSnailAmuletAction"
+	msg := '{"type":"kill","key":"' key '","value":"' amuletValue '"}'
+	OutputDebug "[ahk] send kill msg: " msg
+	try {
+		if (IsSet(MyWindow)) {
+			MyWindow.PostWebMessageAsString(msg)
+		} else {
+			OutputDebug "[ahk] ERROR: MyWindow not initialized for amulet broadcast"
+		}
+	} catch {
+		OutputDebug "[ahk] ERROR broadcasting amulet"
+	}
 }
 nm_CocoCrabCheck(*){
 	global
-	IniWrite (CocoCrabCheck := MainGui["CocoCrabCheck"].Value), "settings\nm_config.ini", "Collect", "CocoCrabCheck"
+	IniWrite (CocoCrabCheck := MainGui["CocoCrabCheck"].Value), "settings\nm_config.ini", "Kill", "CocoCrabEnabled"
+	try nm_PostKillUpdate("CocoCrabCheck", CocoCrabCheck)
 	if (CocoCrabCheck = 1)
 		MsgBox "Being able to kill Coco Crab with the macro depends heavily on your hive level, attack, number of bees, and server lag!", "Coconut Crab", 0x1030 " Owner" MainGui.Hwnd
 }
 nm_setSnailHealth(GuiCtrl, *)
 {
-	global InputSnailHealth
+	global InputSnailHealth, KillStumpSnailHP
 	p := EditGetCurrentCol(GuiCtrl)
 	inputHP := MainGui["SnailHealthEdit"].Value
 
-	if (IsInteger(inputHP) && (inputHP > 30000000)) ; invalid HP
+	; Handle blank value
+	if (inputHP = "") {
+		InputSnailHealth := 0
+		MainGui["SnailHealthText"].Opt("+c0x009900 +Redraw")
+		MainGui["SnailHealthText"].Text := "0%"
+		IniWrite InputSnailHealth, "settings\nm_config.ini", "Collect", "InputSnailHealth"
+		KillStumpSnailHP := 0
+		IniWrite KillStumpSnailHP, "settings\nm_config.ini", "Kill", "StumpSnailHP"
+		msg := '{"type":"kill","key":"KillStumpSnailHP","value":0}'
+		OutputDebug "[ahk] send kill msg: " msg
+		try MyWindow.PostWebMessageAsString(msg)
+	}
+	else if (IsInteger(inputHP) && (inputHP > 30000000)) ; invalid HP
 	{
 		MainGui["SnailHealthEdit"].Value := Round(30000000*InputSnailHealth/100)
 		SendMessage 0xB1, p-2, p-2, GuiCtrl
@@ -5118,17 +6374,35 @@ nm_setSnailHealth(GuiCtrl, *)
 		MainGui["SnailHealthText"].Opt("+c" Format("0x{1:02x}{2:02x}{3:02x}", Round(Min(3*(100-InputSnailHealth), 150)), Round(Min(3*InputSnailHealth, 150)), 0) " +Redraw")
 		MainGui["SnailHealthText"].Text := InputSnailHealth "%"
 		IniWrite InputSnailHealth, "settings\nm_config.ini", "Collect", "InputSnailHealth"
+		; Update Kill variable and broadcast
+		KillStumpSnailHP := inputHP || 0
+		IniWrite KillStumpSnailHP, "settings\nm_config.ini", "Kill", "StumpSnailHP"
+		msg := '{"type":"kill","key":"KillStumpSnailHP","value":' KillStumpSnailHP '}'
+		OutputDebug "[ahk] send kill msg: " msg
+		try MyWindow.PostWebMessageAsString(msg)
 	}
 }
 nm_setChickHealth(GuiCtrl, *)
 {
-	global InputChickHealth, CommandoChickHealth
+	global InputChickHealth, CommandoChickHealth, KillCommandoChickLevel, KillCommandoChickHP
 
 	inputHP := MainGui["ChickHealthEdit"].Value
 	ChickLevel := MainGui["ChickLevel"].Value
 	MaxHealth := CommandoChickHealth.Has(ChickLevel) ? CommandoChickHealth[ChickLevel] : 10000000
 
-	if (GuiCtrl.Name = "ChickHealthEdit")
+	; Handle blank value
+	if (inputHP = "") {
+		InputChickHealth := 0
+		MainGui["ChickHealthText"].Opt("+c0x009900 +Redraw")
+		MainGui["ChickHealthText"].Text := "0%"
+		IniWrite InputChickHealth, "settings\nm_config.ini", "Collect", "InputChickHealth"
+		KillCommandoChickHP := 0
+		IniWrite KillCommandoChickHP, "settings\nm_config.ini", "Kill", "CommandoChickHP"
+		msg := '{"type":"kill","key":"KillCommandoChickHP","value":0}'
+		OutputDebug "[ahk] send kill msg: " msg
+		try MyWindow.PostWebMessageAsString(msg)
+	}
+	else if (GuiCtrl.Name = "ChickHealthEdit")
 	{
 		if (IsInteger(inputHP) && (inputHP > MaxHealth))
 		{
@@ -5147,20 +6421,43 @@ nm_setChickHealth(GuiCtrl, *)
 	MainGui["ChickHealthText"].Text := InputChickHealth "%"
 	IniWrite ChickLevel, "settings\nm_config.ini", "Collect", "ChickLevel"
 	IniWrite InputChickHealth, "settings\nm_config.ini", "Collect", "InputChickHealth"
+	; Update Kill variables and broadcast
+	KillCommandoChickLevel := ChickLevel
+	KillCommandoChickHP := inputHP || 0
+	IniWrite KillCommandoChickLevel, "settings\nm_config.ini", "Kill", "CommandoChickLevel"
+	IniWrite KillCommandoChickHP, "settings\nm_config.ini", "Kill", "CommandoChickHP"
+	msg1 := '{"type":"kill","key":"KillCommandoChickLevel","value":' KillCommandoChickLevel '}'
+	OutputDebug "[ahk] send kill msg: " msg1
+	try MyWindow.PostWebMessageAsString(msg1)
+	msg2 := '{"type":"kill","key":"KillCommandoChickHP","value":' KillCommandoChickHP '}'
+	OutputDebug "[ahk] send kill msg: " msg2
+	try MyWindow.PostWebMessageAsString(msg2)
 }
 nm_SnailTime(*){
-	global SnailTime
+	global SnailTime, KillStumpSnailTime
 	static arr := [5,10,15,"Kill"]
 	SnailTimeUpDown := MainGui["SnailTimeUpDown"].Value
 	MainGui["SnailTimeText"].Text := ((SnailTime := arr[SnailTimeUpDown]) = "Kill") ? SnailTime : SnailTime "m"
 	IniWrite SnailTime, "settings\nm_config.ini", "Collect", "SnailTime"
+	; Update Kill variable and broadcast
+	KillStumpSnailTime := (SnailTime = "Kill") ? "Kill" : (SnailTime "m")
+	IniWrite KillStumpSnailTime, "settings\nm_config.ini", "Kill", "StumpSnailTime"
+	msg := '{"type":"kill","key":"KillStumpSnailTime","value":"' KillStumpSnailTime '"}'
+	OutputDebug "[ahk] send kill msg: " msg
+	try MyWindow.PostWebMessageAsString(msg)
 }
 nm_ChickTime(*){
-	global ChickTime
+	global ChickTime, KillCommandoChickTime
 	static arr := [5,10,15,"Kill"]
 	ChickTimeUpDown := MainGui["ChickTimeUpDown"].Value
 	MainGui["ChickTimeText"].Text := ((ChickTime := arr[ChickTimeUpDown]) = "Kill") ? ChickTime : ChickTime "m"
 	IniWrite ChickTime, "settings\nm_config.ini", "Collect", "ChickTime"
+	; Update Kill variable and broadcast
+	KillCommandoChickTime := (ChickTime = "Kill") ? "Kill" : (ChickTime "m")
+	IniWrite KillCommandoChickTime, "settings\nm_config.ini", "Kill", "CommandoChickTime"
+	msg := '{"type":"kill","key":"KillCommandoChickTime","value":"' KillCommandoChickTime '"}'
+	OutputDebug "[ahk] send kill msg: " msg
+	try MyWindow.PostWebMessageAsString(msg)
 }
 
 ; BOOST TAB
@@ -5209,8 +6506,11 @@ nm_FieldBooster(GuiCtrl?, *){
 		Loop (n - 1) {
 			if (FieldBooster%n% = FieldBooster%A_Index%) {
 				MainGui["FieldBooster" n].Text := FieldBooster%n% := "None"
-				if IsSet(GuiCtrl)
+				if IsSet(GuiCtrl) {
 					IniWrite FieldBooster%n%, "settings\nm_config.ini", "Boost", "FieldBooster" n
+					; Broadcast to Web
+					SendBoostMessage("FieldBooster" n, FieldBooster%n%)
+				}
 			}
 		}
 		if (FieldBooster%n% = "None") {
@@ -5220,8 +6520,11 @@ nm_FieldBooster(GuiCtrl?, *){
 				MainGui["FB" j "Right"].Enabled := 0
 				if (FieldBooster%j% != "None") {
 					MainGui["FieldBooster" j].Text := FieldBooster%j% := "None"
-					if IsSet(GuiCtrl)
+					if IsSet(GuiCtrl) {
 						IniWrite FieldBooster%j%, "settings\nm_config.ini", "Boost", "FieldBooster" j
+						; Broadcast to Web
+						SendBoostMessage("FieldBooster" j, FieldBooster%j%)
+					}
 				}
 			}
 			break
@@ -5232,13 +6535,18 @@ nm_FieldBooster(GuiCtrl?, *){
 		}
 	}
 
-	if IsSet(GuiCtrl)
+	if IsSet(GuiCtrl) {
 		IniWrite FieldBooster%index%, "settings\nm_config.ini", "Boost", "FieldBooster" index
+		; Broadcast to Web
+		SendBoostMessage("FieldBooster" index, FieldBooster%index%)
+	}
 }
 nm_FieldBoosterMins(*){
 	global FieldBoosterMins
 	MainGui["FieldBoosterMins"].Text := FieldBoosterMins := MainGui["FieldBoosterMinsUpDown"].Value * 5
 	IniWrite FieldBoosterMins, "settings\nm_config.ini", "Boost", "FieldBoosterMins"
+	; Broadcast to Web
+	SendBoostMessage("FieldBoosterMins", FieldBoosterMins)
 }
 nm_HotbarWhile(GuiCtrl?, *){
 	global HotbarWhile2, HotbarWhile3, HotbarWhile4, HotbarWhile5, HotbarWhile6, HotbarWhile7
@@ -5600,11 +6908,15 @@ nm_StickerPrinterEgg(GuiCtrl, *){
 nm_BoostChaserCheck(*){
 	global BoostChaserCheck, AutoFieldBoostActive
 	IniWrite (BoostChaserCheck := MainGui["BoostChaserCheck"].Value), "settings\nm_config.ini", "Boost", "BoostChaserCheck"
+	; Broadcast to Web
+	SendBoostMessage("BoostChaserCheck", BoostChaserCheck)
 	;disable AutoFieldBoost (mutually exclusive features)
 	if (BoostChaserCheck = 1) {
 		(IsSet(AFBGui) && IsObject(AFBGui)) && (AFBGui["AutoFieldBoostActive"].Value := AutoFieldBoostActive := 0)
 		IniWrite 0, "settings\nm_config.ini", "Boost", "AutoFieldBoostActive"
 		MainGui["AutoFieldBoostButton"].Text := "Auto Field Boost`n[OFF]"
+		; Broadcast to Web
+		SendBoostMessage("AutoFieldBoostActive", 0)
 	}
 }
 nm_BoostedFieldSelectButton(*){
@@ -22205,6 +23517,82 @@ nm_ForceReconnect(wParam, *){
 	nm_endWalk()
 	CloseRoblox()
 	return 0
+}
+
+;///////////////////////////////////////////////////////////////////////////////////////////
+; LOAD KILL SETTINGS FROM INI
+;///////////////////////////////////////////////////////////////////////////////////////////
+nm_LoadKillSettings() {
+	global KillBugRunGatherInterrupt, KillBugRunRespawnTime, KillLadybugsMode, KillRhinoBeetlesMode, KillSpiderMode, KillMantisMode, KillScorpionsMode, KillWerewolfMode
+	global KillViciousBeeEnabled, KillViciousBeeOnlyDaily, KillViciousBeeFieldClover, KillViciousBeeFieldSpider, KillViciousBeeFieldCactus
+	global KillViciousBeeFieldRose, KillViciousBeeFieldMountainTop, KillViciousBeeFieldPepper
+	global KillKingBeetleEnabled, KillKingBeetleWaitBabyLove, KillKingBeetleAmuletAction
+	global KillTunnelBearEnabled, KillTunnelBearWaitBabyLove
+	global KillCocoCrabEnabled
+	global KillCommandoChickEnabled, KillCommandoChickLevel, KillCommandoChickHP, KillCommandoChickTime
+	global KillStumpSnailEnabled, KillStumpSnailHP, KillStumpSnailAmuletAction, KillStumpSnailTime
+	
+	; BUG RUN SETTINGS
+	KillBugRunGatherInterrupt := IniRead("settings\nm_config.ini", "Kill", "BugRunGatherInterrupt", 1)
+	KillBugRunRespawnTime := IniRead("settings\nm_config.ini", "Kill", "BugRunRespawnTime", 0)
+	KillLadybugsMode := IniRead("settings\nm_config.ini", "Kill", "LadybugsMode", "Kill+Loot")
+	KillRhinoBeetlesMode := IniRead("settings\nm_config.ini", "Kill", "RhinoBeetlesMode", "Kill+Loot")
+	KillSpiderMode := IniRead("settings\nm_config.ini", "Kill", "SpiderMode", "Kill+Loot")
+	KillMantisMode := IniRead("settings\nm_config.ini", "Kill", "MantisMode", "Kill+Loot")
+	KillScorpionsMode := IniRead("settings\nm_config.ini", "Kill", "ScorpionsMode", "Kill+Loot")
+	KillWerewolfMode := IniRead("settings\nm_config.ini", "Kill", "WerewolfMode", "Kill+Loot")
+	
+	; Convert Kill Mode strings to Classic GUI Loot checkbox values (0 = Off/Kill, 1 = Kill+Loot)
+	BugrunLadybugsLoot := (KillLadybugsMode = "Kill+Loot") ? 1 : 0
+	BugrunRhinoBeetlesLoot := (KillRhinoBeetlesMode = "Kill+Loot") ? 1 : 0
+	BugrunSpiderLoot := (KillSpiderMode = "Kill+Loot") ? 1 : 0
+	BugrunMantisLoot := (KillMantisMode = "Kill+Loot") ? 1 : 0
+	BugrunScorpionsLoot := (KillScorpionsMode = "Kill+Loot") ? 1 : 0
+	BugrunWerewolfLoot := (KillWerewolfMode = "Kill+Loot") ? 1 : 0
+	
+	; Convert Kill Mode strings to Classic GUI Kill checkbox values (0 = Off, 1 = Kill or Kill+Loot)
+	BugrunLadybugsCheck := (KillLadybugsMode != "Off") ? 1 : 0
+	BugrunRhinoBeetlesCheck := (KillRhinoBeetlesMode != "Off") ? 1 : 0
+	BugrunSpiderCheck := (KillSpiderMode != "Off") ? 1 : 0
+	BugrunMantisCheck := (KillMantisMode != "Off") ? 1 : 0
+	BugrunScorpionsCheck := (KillScorpionsMode != "Off") ? 1 : 0
+	BugrunWerewolfCheck := (KillWerewolfMode != "Off") ? 1 : 0
+	
+	; STINGERS SETTINGS
+	KillViciousBeeEnabled := IniRead("settings\nm_config.ini", "Kill", "ViciousBeeEnabled", 1)
+	KillViciousBeeOnlyDaily := IniRead("settings\nm_config.ini", "Kill", "ViciousBeeOnlyDaily", 1)
+	KillViciousBeeFieldClover := IniRead("settings\nm_config.ini", "Kill", "ViciousBeeFieldClover", 1)
+	KillViciousBeeFieldSpider := IniRead("settings\nm_config.ini", "Kill", "ViciousBeeFieldSpider", 1)
+	KillViciousBeeFieldCactus := IniRead("settings\nm_config.ini", "Kill", "ViciousBeeFieldCactus", 1)
+	KillViciousBeeFieldRose := IniRead("settings\nm_config.ini", "Kill", "ViciousBeeFieldRose", 1)
+	KillViciousBeeFieldMountainTop := IniRead("settings\nm_config.ini", "Kill", "ViciousBeeFieldMountainTop", 1)
+	KillViciousBeeFieldPepper := IniRead("settings\nm_config.ini", "Kill", "ViciousBeeFieldPepper", 1)
+	
+	; BOSSES SETTINGS - King Beetle
+	KillKingBeetleEnabled := IniRead("settings\nm_config.ini", "Kill", "KingBeetleEnabled", 1)
+	KillKingBeetleWaitBabyLove := IniRead("settings\nm_config.ini", "Kill", "KingBeetleWaitBabyLove", 1)
+	KillKingBeetleAmuletAction := IniRead("settings\nm_config.ini", "Kill", "KingBeetleAmuletAction", "Keep Old")
+	
+	; BOSSES SETTINGS - Tunnel Bear
+	KillTunnelBearEnabled := IniRead("settings\nm_config.ini", "Kill", "TunnelBearEnabled", 1)
+	KillTunnelBearWaitBabyLove := IniRead("settings\nm_config.ini", "Kill", "TunnelBearWaitBabyLove", 1)
+	
+	; BOSSES SETTINGS - Coco Crab
+	KillCocoCrabEnabled := IniRead("settings\nm_config.ini", "Kill", "CocoCrabEnabled", 1)
+	
+	; BOSSES SETTINGS - Commando Chick
+	KillCommandoChickEnabled := IniRead("settings\nm_config.ini", "Kill", "CommandoChickEnabled", 1)
+	KillCommandoChickLevel := IniRead("settings\nm_config.ini", "Kill", "CommandoChickLevel", 10)
+	KillCommandoChickHP := IniRead("settings\nm_config.ini", "Kill", "CommandoChickHP", 250000)
+	KillCommandoChickTime := IniRead("settings\nm_config.ini", "Kill", "CommandoChickTime", "5m")
+	
+	; BOSSES SETTINGS - Stump Snail
+	KillStumpSnailEnabled := IniRead("settings\nm_config.ini", "Kill", "StumpSnailEnabled", 1)
+	KillStumpSnailHP := IniRead("settings\nm_config.ini", "Kill", "StumpSnailHP", 30000000)
+	KillStumpSnailAmuletAction := IniRead("settings\nm_config.ini", "Kill", "StumpSnailAmuletAction", "Keep Old")
+	KillStumpSnailTime := IniRead("settings\nm_config.ini", "Kill", "StumpSnailTime", "5m")
+	
+	OutputDebug "[ahk] Kill settings loaded from INI"
 }
 nm_sendHeartbeat(*){
 	Critical

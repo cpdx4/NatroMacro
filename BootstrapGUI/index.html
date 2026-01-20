@@ -13,7 +13,32 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ms-dropdown@4.0.3/dist/css/dd.min.css">
     <link rel="stylesheet" href="https://code.jquery.com/ui/1.13.2/themes/base/jquery-ui.css">
-</head>
+    <style>
+        /* Disabled control styling for parent-child relationships */
+        .disabled-control {
+            opacity: 0.5 !important;
+            cursor: not-allowed !important;
+            pointer-events: none !important;
+        }
+        
+        .disabled-section {
+            opacity: 0.6;
+        }
+        
+        .disabled-section .form-check-label,
+        .disabled-section .btn,
+        .disabled-section .form-control,
+        .disabled-section input[type="number"],
+        .disabled-section input[type="text"] {
+            opacity: 0.7;
+            cursor: not-allowed;
+        }
+        
+        .disabled-section .btn-check:disabled + .btn {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+    </style>
 
 <body class="d-flex">
     <div class="container-fluid bg-dark d-flex flex-column mh-100">
@@ -22,8 +47,8 @@
                 <div class="row" style="height: 90px;margin-right: 0px;margin-left: 0px;">
                     <div class="col-2 col-md-3 col-xl-1 text-center d-md-flex justify-content-md-center align-items-md-center" style="height: 90px;padding: 0px;max-width: 90px;"><img data-bss-hover-animate="pulse" src="assets/img/misc/NatroRedLogo.png"></div>
                     <div class="col offset-xl-0" style="padding-top: 20px;">
-                        <div class="btn-toolbar d-xl-flex justify-content-xl-start">
-                            <div class="btn-group" role="group"><button class="btn btn-success border rounded-pill" id="Start-Button" type="button" style="margin-right: 10px;"> Start (F1)</button><button class="btn btn-warning border rounded-pill" type="button" style="margin-right: 10px;"> Pause (F2)</button><button class="btn btn-danger border rounded-pill" type="button" style="margin-right: 10px;"> Stop (F3)</button><button class="btn btn-light border rounded-pill" type="button" style="margin-right: 10px;"> AutoClick (F4)</button><button class="btn btn-light border rounded-pill" type="button" style="margin-right: 10px;"> Status (F5)</button></div>
+                            <div class="btn-toolbar d-xl-flex justify-content-xl-start">
+                            <div class="btn-group" role="group"><button class="btn btn-success border rounded-pill" id="Start-Button" type="button" style="margin-right: 10px;"> Start (F1)</button><button class="btn btn-warning border rounded-pill" id="Pause-Button" type="button" style="margin-right: 10px;"> Pause (F2)</button><button class="btn btn-danger border rounded-pill" id="Stop-Button" type="button" style="margin-right: 10px;"> Stop (F3)</button><button class="btn btn-light border rounded-pill" id="AutoClick-Button" type="button" style="margin-right: 10px;"> AutoClick (F4)</button><button class="btn btn-light border rounded-pill" id="Status-Button" type="button" style="margin-right: 10px;"> Status (F5)</button></div>
                         </div>
                     </div>
                 </div>
@@ -294,24 +319,24 @@
                                     <div class="card-body">
                                         <div class="row">
                                             <div class="col">
-                                                <div class="form-check form-switch"><input type="checkbox" id="formCheck-4" class="form-check-input" checked=""><label class="form-label form-check-label" for="formCheck-2">Wealth Clock (tickets)</label></div>
-                                                <div class="form-check form-switch"><input type="checkbox" id="chkCollectMondo" class="form-check-input" checked=""><label class="form-label form-check-label" for="formCheck-2">Mondo</label>
+                                                <div class="form-check form-switch"><input type="checkbox" id="chkCollectClock" class="form-check-input"><label class="form-label form-check-label" for="chkCollectClock">Wealth Clock (tickets)</label></div>
+                                                <div class="form-check form-switch"><input type="checkbox" id="chkCollectMondo" class="form-check-input"><label class="form-label form-check-label" for="chkCollectMondo">Mondo</label>
                                                     <div class="CollectMondoGroup">
                                                         <div id="collectMondoAction">
-                                                            <div class="btn-group" role="group" aria-label="Basic radio toggle button group"><span class="input-group-text CollectMondoGroup" style="height: 38px;">Action</span><input type="radio" id="btnMondoActionBuff" class="btn-check CollectMondoGroup" autocomplete="off" checked="" name="btnMondoAction"><label class="form-label btn btn-outline-primary CollectMondoGroup" id="lblMondoActionBuff" for="btnMondoActionBuff">Buff</label><input type="radio" id="btnMondoActionKill" class="btn-check CollectMondoGroup" autocomplete="off" name="btnMondoAction"><label class="form-label btn btn-outline-primary CollectMondoGroup" id="lblMondoActionKill" for="btnMondoActionKill">Kill</label></div>
+                                                            <div class="btn-group" role="group" aria-label="Basic radio toggle button group"><span class="input-group-text CollectMondoGroup" style="height: 38px;">Action</span><input type="radio" id="btnMondoActionBuff" class="btn-check CollectMondoGroup" autocomplete="off" name="btnMondoAction"><label class="form-label btn btn-outline-primary CollectMondoGroup" id="lblMondoActionBuff" for="btnMondoActionBuff">Buff</label><input type="radio" id="btnMondoActionKill" class="btn-check CollectMondoGroup" autocomplete="off" name="btnMondoAction"><label class="form-label btn btn-outline-primary CollectMondoGroup" id="lblMondoActionKill" for="btnMondoActionKill">Kill</label></div>
                                                         </div>
                                                         <div class="input-group CollectMondoGroup" id="collectMondoSeconds" style="margin-top: 4px;"><input class="form-control CollectMondoGroup" type="number" id="inputMondoSeconds" style="max-width: 75px;" min="0" step="1"><span class="input-group-text CollectMondoGroup">Seconds</span></div>
-                                                        <div id="collectMondoLoot" class="btn-group CollectMondoGroup" role="group" aria-label="Basic radio toggle button group"><span class="input-group-text CollectMondoGroup" style="height: 38px;">Loot:</span><input type="radio" id="btnMondoLootLeft" class="btn-check CollectMondoGroup" autocomplete="off" checked="" name="btnMondoLoot"><label class="form-label btn btn-outline-primary CollectMondoGroup" for="btnMondoLootLeft">Left</label><input type="radio" id="btnMondoLootRight" class="btn-check CollectMondoGroup" autocomplete="off" name="btnMondoLoot"><label class="form-label btn btn-outline-primary CollectMondoGroup" for="btnMondoLootRight">Right</label><input type="radio" id="btnMondoLootRandom" class="btn-check CollectMondoGroup" autocomplete="off" name="btnMondoLoot"><label class="form-label btn btn-outline-primary CollectMondoGroup" for="btnMondoLootRandom">Random</label></div>
+                                                        <div id="collectMondoLoot" class="btn-group CollectMondoGroup" role="group" aria-label="Basic radio toggle button group"><span class="input-group-text CollectMondoGroup" style="height: 38px;">Loot:</span><input type="radio" id="btnMondoLootLeft" class="btn-check CollectMondoGroup" autocomplete="off" name="btnMondoLoot"><label class="form-label btn btn-outline-primary CollectMondoGroup" for="btnMondoLootLeft">Left</label><input type="radio" id="btnMondoLootRight" class="btn-check CollectMondoGroup" autocomplete="off" name="btnMondoLoot"><label class="form-label btn btn-outline-primary CollectMondoGroup" for="btnMondoLootRight">Right</label><input type="radio" id="btnMondoLootRandom" class="btn-check CollectMondoGroup" autocomplete="off" name="btnMondoLoot"><label class="form-label btn btn-outline-primary CollectMondoGroup" for="btnMondoLootRandom">Random</label></div>
                                                     </div>
                                                 </div>
                                             </div>
                                             <div class="col">
-                                                <div class="form-check form-switch"><input type="checkbox" id="chkCollectAnt" class="form-check-input" checked=""><label class="form-label form-check-label" for="formCheck-2">Ant</label>
-                                                    <div><input type="radio" id="btnAntPass" class="btn-check collectAntGroup" autocomplete="off" name="btnAntPassChallenge" checked=""><label class="form-label btn btn-outline-primary collectAntGroup" for="btnAntPass">Pass</label><input type="radio" id="btnAntChallenge" class="btn-check collectAntGroup" autocomplete="off" name="btnAntPassChallenge"><label class="form-label btn btn-outline-primary collectAntGroup" for="btnAntChallenge">Challenge</label></div>
-                                                    <div class="form-check form-switch"><input type="checkbox" id="formCheck-5" class="form-check-input collectAntGroup" checked=""><label class="form-label form-check-label collectAntGroup" for="formCheck-2">Use Tickets</label></div>
+                                                <div class="form-check form-switch"><input type="checkbox" id="chkCollectAnt" class="form-check-input"><label class="form-label form-check-label" for="chkCollectAnt">Ant</label>
+                                                    <div><input type="radio" id="btnAntPass" class="btn-check collectAntGroup" autocomplete="off" name="btnAntPassChallenge"><label class="form-label btn btn-outline-primary collectAntGroup" for="btnAntPass">Pass</label><input type="radio" id="btnAntChallenge" class="btn-check collectAntGroup" autocomplete="off" name="btnAntPassChallenge"><label class="form-label btn btn-outline-primary collectAntGroup" for="btnAntChallenge">Challenge</label></div>
+                                                    <div class="form-check form-switch"><input type="checkbox" id="formCheck-5" class="form-check-input collectAntGroup"><label class="form-label form-check-label collectAntGroup" for="formCheck-5">Use Tickets</label></div>
                                                 </div>
-                                                <div class="form-check form-switch"><input type="checkbox" id="formCheck-7" class="form-check-input" checked=""><label class="form-label form-check-label" for="formCheck-2">Robo pass</label></div>
-                                                <div class="form-check form-switch"><input type="checkbox" id="formCheck-8" class="form-check-input" checked=""><label class="form-label form-check-label" for="formCheck-2">Honeystorm</label></div>
+                                                <div class="form-check form-switch"><input type="checkbox" id="chkCollectRoboPass" class="form-check-input"><label class="form-label form-check-label" for="chkCollectRoboPass">Robo pass</label></div>
+                                                <div class="form-check form-switch"><input type="checkbox" id="chkCollectHoneystorm" class="form-check-input"><label class="form-label form-check-label" for="chkCollectHoneystorm">Honeystorm</label></div>
                                             </div>
                                         </div>
                                     </div>
@@ -330,15 +355,15 @@
                                     <div class="card-body">
                                         <div class="row">
                                             <div class="col">
-                                                <div class="form-check form-switch"><input type="checkbox" id="formCheck-2" class="form-check-input" checked=""><label class="form-label form-check-label" for="formCheck-2">Honey</label></div>
-                                                <div class="form-check form-switch"><input type="checkbox" id="formCheck-11" class="form-check-input" checked=""><label class="form-label form-check-label" for="formCheck-2">Treat</label></div>
-                                                <div class="form-check form-switch"><input type="checkbox" id="formCheck-10" class="form-check-input" checked=""><label class="form-label form-check-label" for="formCheck-2">Blueberry</label></div>
-                                                <div class="form-check form-switch"><input type="checkbox" id="formCheck-9" class="form-check-input" checked=""><label class="form-label form-check-label" for="formCheck-2">Strawberry</label></div>
+                                                <div class="form-check form-switch"><input type="checkbox" id="chkCollectHoneyDis" class="form-check-input"><label class="form-label form-check-label" for="chkCollectHoneyDis">Honey</label></div>
+                                                <div class="form-check form-switch"><input type="checkbox" id="chkCollectTreatDis" class="form-check-input"><label class="form-label form-check-label" for="chkCollectTreatDis">Treat</label></div>
+                                                <div class="form-check form-switch"><input type="checkbox" id="chkCollectBlueberryDis" class="form-check-input"><label class="form-label form-check-label" for="chkCollectBlueberryDis">Blueberry</label></div>
+                                                <div class="form-check form-switch"><input type="checkbox" id="chkCollectStrawberryDis" class="form-check-input"><label class="form-label form-check-label" for="chkCollectStrawberryDis">Strawberry</label></div>
                                             </div>
                                             <div class="col">
-                                                <div class="form-check form-switch"><input type="checkbox" id="formCheck-12" class="form-check-input" checked=""><label class="form-label form-check-label" for="formCheck-2">Coconut</label></div>
-                                                <div class="form-check form-switch"><input type="checkbox" id="formCheck-13" class="form-check-input" checked=""><label class="form-label form-check-label" for="formCheck-2">Royal Jelly</label></div>
-                                                <div class="form-check form-switch"><input type="checkbox" id="formCheck-14" class="form-check-input" checked=""><label class="form-label form-check-label" for="formCheck-2">Glue</label></div>
+                                                <div class="form-check form-switch"><input type="checkbox" id="chkCollectCoconutDis" class="form-check-input"><label class="form-label form-check-label" for="chkCollectCoconutDis">Coconut</label></div>
+                                                <div class="form-check form-switch"><input type="checkbox" id="chkCollectRoyalJellyDis" class="form-check-input"><label class="form-label form-check-label" for="chkCollectRoyalJellyDis">Royal Jelly</label></div>
+                                                <div class="form-check form-switch"><input type="checkbox" id="chkCollectGlueDis" class="form-check-input"><label class="form-label form-check-label" for="chkCollectGlueDis">Glue</label></div>
                                             </div>
                                         </div>
                                     </div>
@@ -570,11 +595,11 @@
                                             <div class="col">
                                                 <div class="row">
                                                     <div class="col">
-                                                        <div class="form-check form-switch"><input type="checkbox" id="formCheck-31" class="form-check-input" checked=""><label class="form-label form-check-label" for="formCheck-2">Allow Gather Interrupt<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="1em" height="1em" fill="currentColor" data-bs-toggle="tooltip" data-bs-html="true" title="If enabled, prioritizes collecting these over gathering pollen" style="margin-bottom: 2px;margin-left: 4px;color: rgb(13,110,253);">
+                                                        <div class="form-check form-switch"><input type="checkbox" id="chkKillBugRunGatherInterrupt" class="form-check-input" checked=""><label class="form-label form-check-label" for="chkKillBugRunGatherInterrupt">Allow Gather Interrupt<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="1em" height="1em" fill="currentColor" data-bs-toggle="tooltip" data-bs-html="true" title="If enabled, prioritizes collecting these over gathering pollen" style="margin-bottom: 2px;margin-left: 4px;color: rgb(13,110,253);">
                                                                     <!--! Font Awesome Free 6.4.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc. -->
                                                                     <path d="M464 256A208 208 0 1 0 48 256a208 208 0 1 0 416 0zM0 256a256 256 0 1 1 512 0A256 256 0 1 1 0 256zm169.8-90.7c7.9-22.3 29.1-37.3 52.8-37.3h58.3c34.9 0 63.1 28.3 63.1 63.1c0 22.6-12.1 43.5-31.7 54.8L280 264.4c-.2 13-10.9 23.6-24 23.6c-13.3 0-24-10.7-24-24V250.5c0-8.6 4.6-16.5 12.1-20.8l44.3-25.4c4.7-2.7 7.6-7.7 7.6-13.1c0-8.4-6.8-15.1-15.1-15.1H222.6c-3.4 0-6.4 2.1-7.5 5.3l-.4 1.2c-4.4 12.5-18.2 19-30.6 14.6s-19-18.2-14.6-30.6l.4-1.2zM224 352a32 32 0 1 1 64 0 32 32 0 1 1 -64 0z"></path>
                                                                 </svg></label></div>
-                                                        <div class="input-group CollectMondoGroup" id="collectMondoSeconds-7" style="margin-top: 4px;"><input class="form-control CollectMondoGroup" type="number" id="inputMondoSeconds-7" style="max-width: 75px;" min="-100" step="1" value="0" max="0"><span class="input-group-text CollectMondoGroup">% Respawn time</span></div>
+                                                        <div class="input-group" id="killBugRunRespawnTime-group" style="margin-top: 4px;"><input class="form-control" type="number" id="inpKillBugRunRespawnTime" style="max-width: 75px;" min="0" step="1" value="0"><span class="input-group-text">% Respawn time</span></div>
                                                     </div>
                                                 </div>
                                             </div>
@@ -587,7 +612,7 @@
                                         <div class="row">
                                             <div class="col">
                                                 <div class="row" style="margin-bottom: 4px;">
-                                                    <div class="col" style="padding-right: 0px;padding-left: 0px;"><button class="btn btn-light btn-sm button-remove-current-tab" type="button" style="margin-left: 4px;"><svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round" class="icon icon-tabler icon-tabler-coins" style="padding-left: 4px;padding-right: 4px;min-width: 30px;min-height: 30px;color: var(--bs-danger);">
+                                                    <div class="col" style="padding-right: 0px;padding-left: 0px;"><button id="btnKillBugRunSelectAll" class="btn btn-light btn-sm button-remove-current-tab" type="button" style="margin-left: 4px;"><svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round" class="icon icon-tabler icon-tabler-coins" style="padding-left: 4px;padding-right: 4px;min-width: 30px;min-height: 30px;color: var(--bs-danger);">
                                                                 <path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
                                                                 <path d="M9 14c0 1.657 2.686 3 6 3s6 -1.343 6 -3s-2.686 -3 -6 -3s-6 1.343 -6 3z"></path>
                                                                 <path d="M9 14v4c0 1.656 2.686 3 6 3s6 -1.344 6 -3v-4"></path>
@@ -600,14 +625,62 @@
                                         </div>
                                         <div class="row">
                                             <div class="col">
-                                                <div id="LadybugsLoot" class="btn-group" role="group" aria-label="Basic radio toggle button group"><span class="input-group-text LadyBugLoot" style="height: 38px;min-width: 130px;">Ladybugs:</span><input type="radio" id="ladybugsLoot" class="btn-check LadyBugLoot" autocomplete="off" checked="" name="ladybugsLootKill"><label class="form-label btn btn-outline-primary LadyBugLoot" for="ladybugsLoot">Loot</label><input type="radio" id="ladybugsKill" class="btn-check LadyBugLoot" autocomplete="off" name="ladybugsLootKill"><label class="form-label btn btn-outline-primary LadyBugLoot" for="ladybugsBoth">Kill</label><input type="radio" id="ladybugsBoth" class="btn-check LadyBugLoot" autocomplete="off" name="ladybugsLootKill"><label class="form-label btn btn-outline-primary LadyBugLoot" for="ladybugsKill">Both</label></div>
-                                                <div id="RhinoBeetleLoot" class="btn-group RhinoBeetleLoot" role="group" aria-label="Basic radio toggle button group"><span class="input-group-text CollectMondoGroup RhinoBeetleLoot" style="height: 38px;width: 130px;">Rhino Beetles:</span><input type="radio" id="btnRhinoBeetleLoot" class="btn-check RhinoBeetleLoot" autocomplete="off" checked="" name="ladybugsLootKill"><label class="form-label btn btn-outline-primary RhinoBeetleLoot" for="ladybugsLoot">Loot</label><input type="radio" id="btnRhinoBeetleKill" class="btn-check RhinoBeetleLoot" autocomplete="off" name="ladybugsLootKill"><label class="form-label btn btn-outline-primary RhinoBeetleLoot" for="ladybugsBoth">Kill</label><input type="radio" id="ladybugsKill-4" class="btn-check RhinoBeetleLoot" autocomplete="off" name="ladybugsLootKill"><label class="form-label btn btn-outline-primary RhinoBeetleLoot" id="btnRhinoBeetleBoth" for="ladybugsKill">Both</label></div>
-                                                <div id="SpiderLoot" class="btn-group" role="group" aria-label="Basic radio toggle button group"><span class="input-group-text CollectMondoGroup" style="height: 38px;width: 130px;">Spider:</span><input type="radio" id="ladybugsLoot-1" class="btn-check" autocomplete="off" checked="" name="btnMondoLoot"><label class="form-label btn btn-outline-primary" for="ladybugsLoot">Loot</label><input type="radio" id="ladybugsKill-1" class="btn-check" autocomplete="off" name="btnMondoLoot"><label class="form-label btn btn-outline-primary" for="ladybugsBoth">Kill</label><input type="radio" id="ladybugsKill-2" class="btn-check" autocomplete="off" name="btnMondoLoot"><label class="form-label btn btn-outline-primary" for="ladybugsKill">Both</label></div>
+                                                <div id="ladybugsGroup" class="btn-group" role="group" aria-label="Ladybugs loot or kill">
+                                                    <span class="input-group-text" style="height: 38px;min-width: 130px;">Ladybugs:</span>
+                                                    <input type="radio" id="btnKillLadybugsOff" class="btn-check" autocomplete="off" checked="" name="killLadybugs">
+                                                    <label class="form-label btn btn-outline-primary" for="btnKillLadybugsOff">Off</label>
+                                                    <input type="radio" id="btnKillLadybugsKill" class="btn-check" autocomplete="off" name="killLadybugs">
+                                                    <label class="form-label btn btn-outline-primary" for="btnKillLadybugsKill">Kill</label>
+                                                    <input type="radio" id="btnKillLadybugsKillLoot" class="btn-check" autocomplete="off" name="killLadybugs">
+                                                    <label class="form-label btn btn-outline-primary" for="btnKillLadybugsKillLoot">Kill+Loot</label>
+                                                </div>
+                                                <div id="rhinoBeetlesGroup" class="btn-group" role="group" aria-label="Rhino Beetles loot or kill" style="margin-top: 8px;">
+                                                    <span class="input-group-text" style="height: 38px;min-width: 130px;">Rhino Beetles:</span>
+                                                    <input type="radio" id="btnKillRhinoBeetlesOff" class="btn-check" autocomplete="off" checked="" name="killRhinoBeetles">
+                                                    <label class="form-label btn btn-outline-primary" for="btnKillRhinoBeetlesOff">Off</label>
+                                                    <input type="radio" id="btnKillRhinoBeetlesKill" class="btn-check" autocomplete="off" name="killRhinoBeetles">
+                                                    <label class="form-label btn btn-outline-primary" for="btnKillRhinoBeetlesKill">Kill</label>
+                                                    <input type="radio" id="btnKillRhinoBeetlesKillLoot" class="btn-check" autocomplete="off" name="killRhinoBeetles">
+                                                    <label class="form-label btn btn-outline-primary" for="btnKillRhinoBeetlesKillLoot">Kill+Loot</label>
+                                                </div>
+                                                <div id="spiderGroup" class="btn-group" role="group" aria-label="Spider loot or kill" style="margin-top: 8px;">
+                                                    <span class="input-group-text" style="height: 38px;min-width: 130px;">Spider:</span>
+                                                    <input type="radio" id="btnKillSpiderOff" class="btn-check" autocomplete="off" checked="" name="killSpider">
+                                                    <label class="form-label btn btn-outline-primary" for="btnKillSpiderOff">Off</label>
+                                                    <input type="radio" id="btnKillSpiderKill" class="btn-check" autocomplete="off" name="killSpider">
+                                                    <label class="form-label btn btn-outline-primary" for="btnKillSpiderKill">Kill</label>
+                                                    <input type="radio" id="btnKillSpiderKillLoot" class="btn-check" autocomplete="off" name="killSpider">
+                                                    <label class="form-label btn btn-outline-primary" for="btnKillSpiderKillLoot">Kill+Loot</label>
+                                                </div>
                                             </div>
                                             <div class="col">
-                                                <div id="MantisLoot" class="btn-group" role="group" aria-label="Basic radio toggle button group"><span class="input-group-text CollectMondoGroup" style="height: 38px;width: 130px;">Mantis:</span><input type="radio" id="ladybugsLoot-5" class="btn-check" autocomplete="off" checked="" name="btnMondoLoot"><label class="form-label btn btn-outline-primary" for="ladybugsLoot">Loot</label><input type="radio" id="ladybugsKill-9" class="btn-check" autocomplete="off" name="btnMondoLoot"><label class="form-label btn btn-outline-primary" for="ladybugsBoth">Kill</label><input type="radio" id="ladybugsKill-10" class="btn-check" autocomplete="off" name="btnMondoLoot"><label class="form-label btn btn-outline-primary" for="ladybugsKill">Both</label></div>
-                                                <div id="ScorpionsLoot" class="btn-group" role="group" aria-label="Basic radio toggle button group"><span class="input-group-text CollectMondoGroup" style="height: 38px;min-width: 130px;">Scorpions</span><input type="radio" id="ladybugsLoot-4" class="btn-check" autocomplete="off" checked="" name="btnMondoLoot"><label class="form-label btn btn-outline-primary" for="ladybugsLoot">Loot</label><input type="radio" id="ladybugsKill-7" class="btn-check" autocomplete="off" name="btnMondoLoot"><label class="form-label btn btn-outline-primary" for="ladybugsBoth">Kill</label><input type="radio" id="ladybugsKill-8" class="btn-check" autocomplete="off" name="btnMondoLoot"><label class="form-label btn btn-outline-primary" for="ladybugsKill">Both</label></div>
-                                                <div id="WerewolfLoot" class="btn-group" role="group" aria-label="Basic radio toggle button group"><span class="input-group-text CollectMondoGroup" style="height: 38px;min-width: 130px;">Werewolf:</span><input type="radio" id="ladybugsLoot-3" class="btn-check" autocomplete="off" checked="" name="btnMondoLoot"><label class="form-label btn btn-outline-primary" for="ladybugsLoot">Loot</label><input type="radio" id="ladybugsKill-5" class="btn-check" autocomplete="off" name="btnMondoLoot"><label class="form-label btn btn-outline-primary" for="ladybugsBoth">Kill</label><input type="radio" id="ladybugsKill-6" class="btn-check" autocomplete="off" name="btnMondoLoot"><label class="form-label btn btn-outline-primary" for="ladybugsKill">Both</label></div>
+                                                <div id="mantisGroup" class="btn-group" role="group" aria-label="Mantis loot or kill">
+                                                    <span class="input-group-text" style="height: 38px;min-width: 130px;">Mantis:</span>
+                                                    <input type="radio" id="btnKillMantisOff" class="btn-check" autocomplete="off" checked="" name="killMantis">
+                                                    <label class="form-label btn btn-outline-primary" for="btnKillMantisOff">Off</label>
+                                                    <input type="radio" id="btnKillMantisKill" class="btn-check" autocomplete="off" name="killMantis">
+                                                    <label class="form-label btn btn-outline-primary" for="btnKillMantisKill">Kill</label>
+                                                    <input type="radio" id="btnKillMantisKillLoot" class="btn-check" autocomplete="off" name="killMantis">
+                                                    <label class="form-label btn btn-outline-primary" for="btnKillMantisKillLoot">Kill+Loot</label>
+                                                </div>
+                                                <div id="scorpionsGroup" class="btn-group" role="group" aria-label="Scorpions loot or kill" style="margin-top: 8px;">
+                                                    <span class="input-group-text" style="height: 38px;min-width: 130px;">Scorpions:</span>
+                                                    <input type="radio" id="btnKillScorpionsOff" class="btn-check" autocomplete="off" checked="" name="killScorpions">
+                                                    <label class="form-label btn btn-outline-primary" for="btnKillScorpionsOff">Off</label>
+                                                    <input type="radio" id="btnKillScorpionsKill" class="btn-check" autocomplete="off" name="killScorpions">
+                                                    <label class="form-label btn btn-outline-primary" for="btnKillScorpionsKill">Kill</label>
+                                                    <input type="radio" id="btnKillScorpionsKillLoot" class="btn-check" autocomplete="off" name="killScorpions">
+                                                    <label class="form-label btn btn-outline-primary" for="btnKillScorpionsKillLoot">Kill+Loot</label>
+                                                </div>
+                                                <div id="werewolfGroup" class="btn-group" role="group" aria-label="Werewolf loot or kill" style="margin-top: 8px;">
+                                                    <span class="input-group-text" style="height: 38px;min-width: 130px;">Werewolf:</span>
+                                                    <input type="radio" id="btnKillWerewolfOff" class="btn-check" autocomplete="off" checked="" name="killWerewolf">
+                                                    <label class="form-label btn btn-outline-primary" for="btnKillWerewolfOff">Off</label>
+                                                    <input type="radio" id="btnKillWerewolfKill" class="btn-check" autocomplete="off" name="killWerewolf">
+                                                    <label class="form-label btn btn-outline-primary" for="btnKillWerewolfKill">Kill</label>
+                                                    <input type="radio" id="btnKillWerewolfKillLoot" class="btn-check" autocomplete="off" name="killWerewolf">
+                                                    <label class="form-label btn btn-outline-primary" for="btnKillWerewolfKillLoot">Kill+Loot</label>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
@@ -624,8 +697,8 @@
                                     <div class="card-body">
                                         <div class="row">
                                             <div class="col">
-                                                <div class="form-check form-switch"><input type="checkbox" id="formCheck-34" class="form-check-input" checked=""><label class="form-label form-check-label" for="formCheck-2">Kill Vicious Bee</label>
-                                                    <div class="form-check form-switch"><input type="checkbox" id="formCheck-38" class="form-check-input" checked=""><label class="form-label form-check-label" for="formCheck-2">Only Daily bonus</label></div>
+                                                <div class="form-check form-switch"><input type="checkbox" id="chkKillViciousBee" class="form-check-input" checked=""><label class="form-label form-check-label" for="chkKillViciousBee">Kill Vicious Bee</label>
+                                                    <div class="form-check form-switch"><input type="checkbox" id="chkKillViciousBeeOnlyDaily" class="form-check-input" checked=""><label class="form-label form-check-label" for="chkKillViciousBeeOnlyDaily">Only Daily bonus</label></div>
                                                 </div>
                                                 <hr>
                                             </div>
@@ -637,14 +710,14 @@
                                         </div>
                                         <div class="row">
                                             <div class="col">
-                                                <div class="form-check form-switch"><input type="checkbox" id="formCheck-42" class="form-check-input" checked=""><label class="form-label form-check-label" for="formCheck-2">Clover</label></div>
-                                                <div class="form-check form-switch"><input type="checkbox" id="formCheck-37" class="form-check-input" checked=""><label class="form-label form-check-label" for="formCheck-2">Spider</label></div>
-                                                <div class="form-check form-switch"><input type="checkbox" id="formCheck-35" class="form-check-input" checked=""><label class="form-label form-check-label" for="formCheck-2">Cactus</label></div>
+                                                <div class="form-check form-switch"><input type="checkbox" id="chkKillViciousBeeFieldClover" class="form-check-input" checked=""><label class="form-label form-check-label" for="chkKillViciousBeeFieldClover">Clover</label></div>
+                                                <div class="form-check form-switch"><input type="checkbox" id="chkKillViciousBeeFieldSpider" class="form-check-input" checked=""><label class="form-label form-check-label" for="chkKillViciousBeeFieldSpider">Spider</label></div>
+                                                <div class="form-check form-switch"><input type="checkbox" id="chkKillViciousBeeFieldCactus" class="form-check-input" checked=""><label class="form-label form-check-label" for="chkKillViciousBeeFieldCactus">Cactus</label></div>
                                             </div>
                                             <div class="col">
-                                                <div class="form-check form-switch"><input type="checkbox" id="formCheck-40" class="form-check-input" checked=""><label class="form-label form-check-label" for="formCheck-2">Rose</label></div>
-                                                <div class="form-check form-switch"><input type="checkbox" id="formCheck-39" class="form-check-input" checked=""><label class="form-label form-check-label" for="formCheck-2">Mountain Top</label></div>
-                                                <div class="form-check form-switch"><input type="checkbox" id="formCheck-41" class="form-check-input" checked=""><label class="form-label form-check-label" for="formCheck-2">Pepper</label></div>
+                                                <div class="form-check form-switch"><input type="checkbox" id="chkKillViciousBeeFieldRose" class="form-check-input" checked=""><label class="form-label form-check-label" for="chkKillViciousBeeFieldRose">Rose</label></div>
+                                                <div class="form-check form-switch"><input type="checkbox" id="chkKillViciousBeeFieldMountainTop" class="form-check-input" checked=""><label class="form-label form-check-label" for="chkKillViciousBeeFieldMountainTop">Mountain Top</label></div>
+                                                <div class="form-check form-switch"><input type="checkbox" id="chkKillViciousBeeFieldPepper" class="form-check-input" checked=""><label class="form-label form-check-label" for="chkKillViciousBeeFieldPepper">Pepper</label></div>
                                             </div>
                                         </div>
                                     </div>
@@ -660,32 +733,32 @@
                                     <div class="card-body"></div>
                                     <div class="row">
                                         <div class="col">
-                                            <div class="form-check form-switch"><input type="checkbox" id="formCheck-43" class="form-check-input" checked=""><label class="form-label form-check-label" for="formCheck-2">King Beetle</label>
-                                                <div class="form-check form-switch"><input type="checkbox" id="formCheck-49" class="form-check-input" checked=""><label class="form-label form-check-label" for="formCheck-2"><img src="assets/img/misc/BabyLove.png" style="padding-right: 4px;">Wait for Baby Love<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="1em" height="1em" fill="currentColor" data-bs-toggle="tooltip" data-bs-html="true" title="If enabled, will only kill after <b>Baby Love</b> is activated. <br/><br/>Baby Love improves Loot Luck but requires bees that drop the Baby Love token." style="margin-left: 3px;margin-bottom: 2px;color: rgb(13,110,253);">
+                                            <div class="form-check form-switch"><input type="checkbox" id="chkKillKingBeetle" class="form-check-input" checked=""><label class="form-label form-check-label" for="chkKillKingBeetle">King Beetle</label>
+                                                <div class="form-check form-switch"><input type="checkbox" id="chkKillKingBeetleWaitBabyLove" class="form-check-input" checked=""><label class="form-label form-check-label" for="chkKillKingBeetleWaitBabyLove"><img src="assets/img/misc/BabyLove.png" style="padding-right: 4px;">Wait for Baby Love<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="1em" height="1em" fill="currentColor" data-bs-toggle="tooltip" data-bs-html="true" title="If enabled, will only kill after <b>Baby Love</b> is activated. <br/><br/>Baby Love improves Loot Luck but requires bees that drop the Baby Love token." style="margin-left: 3px;margin-bottom: 2px;color: rgb(13,110,253);">
                                                             <!--! Font Awesome Free 6.4.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc. -->
                                                             <path d="M464 256A208 208 0 1 0 48 256a208 208 0 1 0 416 0zM0 256a256 256 0 1 1 512 0A256 256 0 1 1 0 256zm169.8-90.7c7.9-22.3 29.1-37.3 52.8-37.3h58.3c34.9 0 63.1 28.3 63.1 63.1c0 22.6-12.1 43.5-31.7 54.8L280 264.4c-.2 13-10.9 23.6-24 23.6c-13.3 0-24-10.7-24-24V250.5c0-8.6 4.6-16.5 12.1-20.8l44.3-25.4c4.7-2.7 7.6-7.7 7.6-13.1c0-8.4-6.8-15.1-15.1-15.1H222.6c-3.4 0-6.4 2.1-7.5 5.3l-.4 1.2c-4.4 12.5-18.2 19-30.6 14.6s-19-18.2-14.6-30.6l.4-1.2zM224 352a32 32 0 1 1 64 0 32 32 0 1 1 -64 0z"></path>
                                                         </svg></label></div>
-                                                <div class="btn-group" role="group" aria-label="Basic radio toggle button group"><span class="input-group-text CollectMondoGroup" style="height: 38px;"><img src="assets/img/misc/KingBeetleAmulet.png" style="padding-right: 4px;">Amulet</span><input type="radio" id="btnKingBeetleAmuletKeepOld" class="btn-check CollectMondoGroup" autocomplete="off" checked="" name="btnKingBeetleAmulet"><label class="form-label btn btn-outline-primary CollectMondoGroup" id="lblMondoActionBuff-1" for="btnMondoActionBuff">Keep Old</label><input type="radio" id="btnMondoActionKill-1" class="btn-check CollectMondoGroup" autocomplete="off" name="btnKingBeetleAmulet"><label class="form-label btn btn-outline-primary CollectMondoGroup" id="lblMondoActionKill-1" for="btnMondoActionKill">Do Nothing</label></div>
+                                                <div class="btn-group" role="group" aria-label="King Beetle Amulet action"><span class="input-group-text" style="height: 38px;"><img src="assets/img/misc/KingBeetleAmulet.png" style="padding-right: 4px;">Amulet</span><input type="radio" id="btnKillKingBeetleAmuletKeepOld" class="btn-check" autocomplete="off" checked="" name="killKingBeetleAmulet"><label class="form-label btn btn-outline-primary" for="btnKillKingBeetleAmuletKeepOld">Keep Old</label><input type="radio" id="btnKillKingBeetleAmuletDoNothing" class="btn-check" autocomplete="off" name="killKingBeetleAmulet"><label class="form-label btn btn-outline-primary" for="btnKillKingBeetleAmuletDoNothing">Do Nothing</label></div>
                                             </div>
-                                            <div class="form-check form-switch"><input type="checkbox" id="formCheck-44" class="form-check-input" checked=""><label class="form-label form-check-label" for="formCheck-2">Tunnel Bear</label>
-                                                <div class="form-check form-switch"><input type="checkbox" id="formCheck-46" class="form-check-input" checked=""><label class="form-label form-check-label" for="formCheck-2"> <img src="assets/img/misc/BabyLove.png" style="padding-right: 4px;">Wait for Baby Love<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="1em" height="1em" fill="currentColor" data-bs-toggle="tooltip" data-bs-html="true" title="If enabled, will only kill after <b>Baby Love</b> is activated. <br/><br/>Baby Love improves Loot Luck but requires bees that drop the Baby Love token." style="margin-left: 4px;margin-bottom: 2px;color: rgb(13,110,253);">
+                                            <div class="form-check form-switch"><input type="checkbox" id="chkKillTunnelBear" class="form-check-input" checked=""><label class="form-label form-check-label" for="chkKillTunnelBear">Tunnel Bear</label>
+                                                <div class="form-check form-switch"><input type="checkbox" id="chkKillTunnelBearWaitBabyLove" class="form-check-input" checked=""><label class="form-label form-check-label" for="chkKillTunnelBearWaitBabyLove"><img src="assets/img/misc/BabyLove.png" style="padding-right: 4px;">Wait for Baby Love<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="1em" height="1em" fill="currentColor" data-bs-toggle="tooltip" data-bs-html="true" title="If enabled, will only kill after <b>Baby Love</b> is activated. <br/><br/>Baby Love improves Loot Luck but requires bees that drop the Baby Love token." style="margin-left: 4px;margin-bottom: 2px;color: rgb(13,110,253);">
                                                             <!--! Font Awesome Free 6.4.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc. -->
                                                             <path d="M464 256A208 208 0 1 0 48 256a208 208 0 1 0 416 0zM0 256a256 256 0 1 1 512 0A256 256 0 1 1 0 256zm169.8-90.7c7.9-22.3 29.1-37.3 52.8-37.3h58.3c34.9 0 63.1 28.3 63.1 63.1c0 22.6-12.1 43.5-31.7 54.8L280 264.4c-.2 13-10.9 23.6-24 23.6c-13.3 0-24-10.7-24-24V250.5c0-8.6 4.6-16.5 12.1-20.8l44.3-25.4c4.7-2.7 7.6-7.7 7.6-13.1c0-8.4-6.8-15.1-15.1-15.1H222.6c-3.4 0-6.4 2.1-7.5 5.3l-.4 1.2c-4.4 12.5-18.2 19-30.6 14.6s-19-18.2-14.6-30.6l.4-1.2zM224 352a32 32 0 1 1 64 0 32 32 0 1 1 -64 0z"></path>
                                                         </svg></label></div>
                                             </div>
-                                            <div class="form-check form-switch"><input type="checkbox" id="formCheck-45" class="form-check-input" checked=""><label class="form-label form-check-label" for="formCheck-2">Coco Crab</label></div>
-                                            <div class="form-check form-switch"><input type="checkbox" id="formCheck-47" class="form-check-input" checked=""><label class="form-label form-check-label" for="formCheck-2">Commando Chick</label>
-                                                <div class="input-group CollectMondoGroup" id="collectMondoSeconds-9" style="margin-top: 0px;margin-bottom: 10px;"><input class="form-control CollectMondoGroup" type="number" id="inputMondoSeconds-9" min="3" step="1" value="10" max="25" style="min-width: 100px;max-width: 125px;"><span class="input-group-text CollectMondoGroup">Level</span></div>
-                                                <div class="input-group CollectMondoGroup" id="collectMondoSeconds-8" style="margin-top: 0px;margin-bottom: 10px;"><input class="form-control CollectMondoGroup" type="number" id="inputMondoSeconds-8" min="0" step="1" value="250000" max="35000000" style="min-width: 100px;max-width: 125px;"><span class="input-group-text CollectMondoGroup">HP</span></div>
-                                                <div id="SpiderLoot-1" class="btn-group" role="group" aria-label="Basic radio toggle button group"><span class="input-group-text CollectMondoGroup" style="height: 38px;">Time:</span><input type="radio" id="ladybugsLoot-2" class="btn-check" autocomplete="off" checked="" name="btnMondoLoot"><label class="form-label btn btn-outline-primary" for="ladybugsLoot">5m</label><input type="radio" id="ladybugsKill-3" class="btn-check" autocomplete="off" name="btnMondoLoot"><label class="form-label btn btn-outline-primary" for="ladybugsBoth">10m</label><input type="radio" id="ladybugsKill-11" class="btn-check" autocomplete="off" name="btnMondoLoot"><label class="form-label btn btn-outline-primary" for="ladybugsKill">15m</label><input type="radio" id="ladybugsKill-12" class="btn-check" autocomplete="off" name="btnMondoLoot"><label class="form-label btn btn-outline-primary" for="ladybugsKill">Kill</label></div>
+                                            <div class="form-check form-switch"><input type="checkbox" id="chkKillCocoCrab" class="form-check-input" checked=""><label class="form-label form-check-label" for="chkKillCocoCrab">Coco Crab</label></div>
+                                            <div class="form-check form-switch"><input type="checkbox" id="chkKillCommandoChick" class="form-check-input" checked=""><label class="form-label form-check-label" for="chkKillCommandoChick">Commando Chick</label>
+                                                <div class="input-group" id="killCommandoChickLevel-group" style="margin-top: 0px;margin-bottom: 10px;"><input class="form-control" type="number" id="inpKillCommandoChickLevel" min="3" step="1" value="10" max="25" style="min-width: 100px;max-width: 125px;"><span class="input-group-text">Level</span></div>
+                                                <div class="input-group" id="killCommandoChickHP-group" style="margin-top: 0px;margin-bottom: 10px;"><input class="form-control" type="number" id="inpKillCommandoChickHP" min="0" step="1" value="250000" max="35000000" style="min-width: 100px;max-width: 125px;"><span class="input-group-text">HP</span></div>
+                                                <div class="btn-group" role="group" aria-label="Commando Chick time"><span class="input-group-text" style="height: 38px;">Time:</span><input type="radio" id="btnKillCommandoChickTime5m" class="btn-check" autocomplete="off" checked="" name="killCommandoChickTime"><label class="form-label btn btn-outline-primary" for="btnKillCommandoChickTime5m">5m</label><input type="radio" id="btnKillCommandoChickTime10m" class="btn-check" autocomplete="off" name="killCommandoChickTime"><label class="form-label btn btn-outline-primary" for="btnKillCommandoChickTime10m">10m</label><input type="radio" id="btnKillCommandoChickTime15m" class="btn-check" autocomplete="off" name="killCommandoChickTime"><label class="form-label btn btn-outline-primary" for="btnKillCommandoChickTime15m">15m</label><input type="radio" id="btnKillCommandoChickTimeKill" class="btn-check" autocomplete="off" name="killCommandoChickTime"><label class="form-label btn btn-outline-primary" for="btnKillCommandoChickTimeKill">Kill</label></div>
                                             </div>
                                         </div>
                                         <div class="col">
-                                            <div class="form-check form-switch"><input type="checkbox" id="formCheck-48" class="form-check-input" checked=""><label class="form-label form-check-label" for="formCheck-2">Stump Snail</label>
+                                            <div class="form-check form-switch"><input type="checkbox" id="chkKillStumpSnail" class="form-check-input" checked=""><label class="form-label form-check-label" for="chkKillStumpSnail">Stump Snail</label>
                                                 <div></div>
-                                                <div class="btn-group" role="group" aria-label="Basic radio toggle button group"><span class="input-group-text CollectMondoGroup" style="height: 38px;"><img src="assets/img/misc/SnailAmulet.png" style="padding-right: 4px;">Amulet</span><input type="radio" id="btnMondoActionBuff-2" class="btn-check CollectMondoGroup" autocomplete="off" checked="" name="btnMondoAction"><label class="form-label btn btn-outline-primary CollectMondoGroup" id="lblMondoActionBuff-2" for="btnMondoActionBuff">Keep Old</label><input type="radio" id="btnMondoActionKill-2" class="btn-check CollectMondoGroup" autocomplete="off" name="btnMondoAction"><label class="form-label btn btn-outline-primary CollectMondoGroup" id="lblMondoActionKill-2" for="btnMondoActionKill">Do Nothing</label></div>
-                                                <div class="input-group CollectMondoGroup" id="collectMondoSeconds-10" style="margin-top: 0px;margin-bottom: 10px;"><input class="form-control CollectMondoGroup" type="number" id="inputMondoSeconds-10" min="-100" step="1" value="30000000" max="0" style="min-width: 100px;max-width: 125px;"><span class="input-group-text CollectMondoGroup">HP</span></div>
-                                                <div id="SpiderLoot-2" class="btn-group" role="group" aria-label="Basic radio toggle button group"><span class="input-group-text CollectMondoGroup" style="height: 38px;">Time:</span><input type="radio" id="ladybugsLoot-6" class="btn-check" autocomplete="off" checked="" name="btnMondoLoot"><label class="form-label btn btn-outline-primary" for="ladybugsLoot">5m</label><input type="radio" id="ladybugsKill-13" class="btn-check" autocomplete="off" name="btnMondoLoot"><label class="form-label btn btn-outline-primary" for="ladybugsBoth">10m</label><input type="radio" id="ladybugsKill-14" class="btn-check" autocomplete="off" name="btnMondoLoot"><label class="form-label btn btn-outline-primary" for="ladybugsKill">15m</label><input type="radio" id="ladybugsKill-15" class="btn-check" autocomplete="off" name="btnMondoLoot"><label class="form-label btn btn-outline-primary" for="ladybugsKill">Kill</label></div>
+                                                <div class="btn-group" role="group" aria-label="Stump Snail amulet action"><span class="input-group-text" style="height: 38px;"><img src="assets/img/misc/SnailAmulet.png" style="padding-right: 4px;">Amulet</span><input type="radio" id="btnKillStumpSnailAmuletKeepOld" class="btn-check" autocomplete="off" checked="" name="killStumpSnailAmulet"><label class="form-label btn btn-outline-primary" for="btnKillStumpSnailAmuletKeepOld">Keep Old</label><input type="radio" id="btnKillStumpSnailAmuletDoNothing" class="btn-check" autocomplete="off" name="killStumpSnailAmulet"><label class="form-label btn btn-outline-primary" for="btnKillStumpSnailAmuletDoNothing">Do Nothing</label></div>
+                                                <div class="input-group" id="killStumpSnailHP-group" style="margin-top: 0px;margin-bottom: 10px;"><input class="form-control" type="number" id="inpKillStumpSnailHP" min="0" step="1" value="30000000" max="999999999" style="min-width: 100px;max-width: 125px;"><span class="input-group-text">HP</span></div>
+                                                <div class="btn-group" role="group" aria-label="Stump Snail time"><span class="input-group-text" style="height: 38px;">Time:</span><input type="radio" id="btnKillStumpSnailTime5m" class="btn-check" autocomplete="off" checked="" name="killStumpSnailTime"><label class="form-label btn btn-outline-primary" for="btnKillStumpSnailTime5m">5m</label><input type="radio" id="btnKillStumpSnailTime10m" class="btn-check" autocomplete="off" name="killStumpSnailTime"><label class="form-label btn btn-outline-primary" for="btnKillStumpSnailTime10m">10m</label><input type="radio" id="btnKillStumpSnailTime15m" class="btn-check" autocomplete="off" name="killStumpSnailTime"><label class="form-label btn btn-outline-primary" for="btnKillStumpSnailTime15m">15m</label><input type="radio" id="btnKillStumpSnailTimeKill" class="btn-check" autocomplete="off" name="killStumpSnailTime"><label class="form-label btn btn-outline-primary" for="btnKillStumpSnailTimeKill">Kill</label></div>
                                             </div>
                                         </div>
                                     </div>
@@ -708,7 +781,7 @@
                                         <div class="col-xl-4">
                                             <div class="row">
                                                 <div class="col">
-                                                    <h4>Boost #1</h4><select class="border rounded border-1 border-secondary selectpicker" name="stickerPrinter">
+                                                    <h4>Boost #1</h4><select class="border rounded border-1 border-secondary selectpicker" id="boostFieldBooster1" name="boostFieldBooster1">
     <option value="none">None</option>
     <option data-content="<img src=assets/img/fieldBoosters/blueBooster.png><span>Blue booster</span>" value="blueBooster">Blue</option>
     <option data-content="<img src=assets/img/fieldBoosters/redBooster.png><span>Red booster</span>" value="redBooster">Red</option>
@@ -719,7 +792,7 @@
                                             </div>
                                             <div class="row">
                                                 <div class="col">
-                                                    <h4>Boost #2<select class="border rounded border-1 border-secondary selectpicker" name="stickerPrinter">
+                                                    <h4>Boost #2<select class="border rounded border-1 border-secondary selectpicker" id="boostFieldBooster2" name="boostFieldBooster2">
     <option value="none">None</option>
     <option data-content="<img src=assets/img/fieldBoosters/blueBooster.png><span>Blue booster</span>" value="blueBooster">Blue</option>
     <option data-content="<img src=assets/img/fieldBoosters/redBooster.png><span>Red booster</span>" value="redBooster">Red</option>
@@ -730,7 +803,7 @@
                                             </div>
                                             <div class="row">
                                                 <div class="col">
-                                                    <h4>Boost #3</h4><select class="border rounded border-1 border-secondary selectpicker" name="stickerPrinter">
+                                                    <h4>Boost #3</h4><select class="border rounded border-1 border-secondary selectpicker" id="boostFieldBooster3" name="boostFieldBooster3">
     <option value="none">None</option>
     <option data-content="<img src=assets/img/fieldBoosters/blueBooster.png><span>Blue booster</span>" value="blueBooster">Blue</option>
     <option data-content="<img src=assets/img/fieldBoosters/redBooster.png><span>Red booster</span>" value="redBooster">Red</option>
@@ -743,8 +816,8 @@
                                                 <div class="col">
                                                     <div class="row" style="margin-top: 10px;">
                                                         <div class="col">
-                                                            <div class="form-check form-switch" style="margin-left: 4px;"><input type="checkbox" id="formCheck-63" class="form-check-input" checked=""><label class="form-label form-check-label" for="formCheck-2">Gather in Boosted Field</label></div>
-                                                            <div class="btn-group" role="group" aria-label="Basic radio toggle button group"><span class="input-group-text CollectMondoGroup" style="height: 38px;">Separate by:</span><input type="number" id="inputMondoSeconds-12" class="CollectMondoGroup" style="max-width: 75px;" min="0" step="1" value="5"><span class="input-group-text CollectMondoGroup" style="height: 38px;">Mins</span></div>
+                                                            <div class="form-check form-switch" style="margin-left: 4px;"><input type="checkbox" id="boostGatherInBoostedField" class="form-check-input" checked=""><label class="form-label form-check-label" for="boostGatherInBoostedField">Gather in Boosted Field</label></div>
+                                                            <div class="btn-group" role="group" aria-label="Basic radio toggle button group"><span class="input-group-text CollectMondoGroup" style="height: 38px;">Separate by:</span><input type="number" id="boostMinsInput" class="CollectMondoGroup" style="max-width: 75px;" min="0" step="1" value="5"><span class="input-group-text CollectMondoGroup" style="height: 38px;">Mins</span></div>
                                                         </div>
                                                     </div>
                                                 </div>
@@ -753,7 +826,7 @@
                                         <div class="col">
                                             <div class="row">
                                                 <div class="col">
-                                                    <div class="form-check form-switch" style="margin-left: 4px;"><input type="checkbox" id="formCheck-64" class="form-check-input" checked=""><label class="form-label form-check-label" for="formCheck-2">Activate Auto Field Boost for Gathering Field</label></div>
+                                                    <div class="form-check form-switch" style="margin-left: 4px;"><input type="checkbox" id="boostAutoFieldBoostActive" class="form-check-input" checked=""><label class="form-label form-check-label" for="boostAutoFieldBoostActive">Activate Auto Field Boost for Gathering Field</label></div>
                                                     <div class="form-check form-switch" style="margin-left: 4px;"><button class="btn btn-light btn-sm" id="Copy-3" type="button" style="margin-left: 4px;"><svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round" class="icon icon-tabler icon-tabler-dice-5">
                                                                 <path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
                                                                 <path d="M3 3m0 2a2 2 0 0 1 2 -2h14a2 2 0 0 1 2 2v14a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2z"></path>
@@ -773,8 +846,8 @@
                                                                 <div class="accordion-body">
                                                                     <div class="row">
                                                                         <div class="col">
-                                                                            <div class="form-check form-switch"><input type="checkbox" checked="" class="form-check-input" id="formCheck-65"><label class="form-label form-label form-label form-label form-check-label" for="formCheck-2">Activate Automatic Field Boost for Gathering Field</label></div>
-                                                                            <div aria-label="Basic radio toggle button group" class="btn-group" role="group"><span class="input-group-text CollectMondoGroup" style="height:38px;">Re-buff field boost every</span><input type="number" class="CollectMondoGroup" id="inputMondoSeconds-13" max="15" min="8" step="0.5" style="max-width:75px;margin-left:4px;" value="12.5"><span class="input-group-text CollectMondoGroup" style="height:38px;">Mins</span></div>
+                                                                            <div class="form-check form-switch"><input type="checkbox" checked="" class="form-check-input" id="boostAutoFieldBoostActiveLabel"><label class="form-label form-label form-label form-label form-check-label" for="boostAutoFieldBoostActiveLabel">Activate Automatic Field Boost for Gathering Field</label></div>
+                                                                            <div aria-label="Basic radio toggle button group" class="btn-group" role="group"><span class="input-group-text CollectMondoGroup" style="height:38px;">Re-buff field boost every</span><input type="number" class="CollectMondoGroup" id="boostAutoFieldBoostRefresh" max="15" min="8" step="0.5" style="max-width:75px;margin-left:4px;" value="12.5"><span class="input-group-text CollectMondoGroup" style="height:38px;">Mins</span></div>
                                                                         </div>
                                                                     </div>
                                                                     <div class="row">
@@ -839,25 +912,31 @@
                                                                     <div class="row">
                                                                         <div class="col">
                                                                             <h4>Blue</h4>
-                                                                            <div class="form-check form-switch" style="margin-left: 4px;"><input type="checkbox" id="formCheck-78" class="form-check-input" checked=""><label class="form-label form-check-label" for="formCheck-2">Blue Flower</label></div>
-                                                                            <div class="form-check form-switch" style="margin-left: 4px;"><input type="checkbox" id="formCheck-80" class="form-check-input" checked=""><label class="form-label form-check-label" for="formCheck-2">Bamboo</label></div>
-                                                                            <div class="form-check form-switch" style="margin-left: 4px;"><input type="checkbox" id="formCheck-79" class="form-check-input" checked=""><label class="form-label form-check-label" for="formCheck-2">Pine Tree</label></div>
+                                                                            <div class="form-check form-switch" style="margin-left: 4px;"><input type="checkbox" id="boostBlueFlower" class="form-check-input" checked=""><label class="form-label form-check-label" for="boostBlueFlower">Blue Flower</label></div>
+                                                                            <div class="form-check form-switch" style="margin-left: 4px;"><input type="checkbox" id="boostBamboo" class="form-check-input" checked=""><label class="form-label form-check-label" for="boostBamboo">Bamboo</label></div>
+                                                                            <div class="form-check form-switch" style="margin-left: 4px;"><input type="checkbox" id="boostPineTree" class="form-check-input" checked=""><label class="form-label form-check-label" for="boostPineTree">Pine Tree</label></div>
                                                                         </div>
                                                                         <div class="col">
                                                                             <h4>Mountain Top</h4>
-                                                                            <div class="form-check form-switch" style="margin-left: 4px;"><input type="checkbox" id="formCheck-81" class="form-check-input" checked=""><label class="form-label form-check-label" for="formCheck-2">Dandelion</label></div>
-                                                                            <div class="form-check form-switch" style="margin-left: 4px;"><input type="checkbox" id="formCheck-82" class="form-check-input" checked=""><label class="form-label form-check-label" for="formCheck-2">Sunflower</label></div>
-                                                                            <div class="form-check form-switch" style="margin-left: 4px;"><input type="checkbox" id="formCheck-83" class="form-check-input" checked=""><label class="form-label form-check-label" for="formCheck-2">Clover</label></div>
-                                                                            <div class="form-check form-switch" style="margin-left: 4px;"><input type="checkbox" id="formCheck-90" class="form-check-input" checked=""><label class="form-label form-check-label" for="formCheck-2">Spider</label></div>
-                                                                            <div class="form-check form-switch" style="margin-left: 4px;"><input type="checkbox" id="formCheck-89" class="form-check-input" checked=""><label class="form-label form-check-label" for="formCheck-2">Pineapple</label></div>
-                                                                            <div class="form-check form-switch" style="margin-left: 4px;"><input type="checkbox" id="formCheck-88" class="form-check-input" checked=""><label class="form-label form-check-label" for="formCheck-2">Cactus</label></div>
-                                                                            <div class="form-check form-switch" style="margin-left: 4px;"><input type="checkbox" id="formCheck-87" class="form-check-input" checked=""><label class="form-label form-check-label" for="formCheck-2">Pumpkin</label></div>
+                                                                            <div class="form-check form-switch" style="margin-left: 4px;"><input type="checkbox" id="boostDandelion" class="form-check-input" checked=""><label class="form-label form-check-label" for="boostDandelion">Dandelion</label></div>
+                                                                            <div class="form-check form-switch" style="margin-left: 4px;"><input type="checkbox" id="boostSunflower" class="form-check-input" checked=""><label class="form-label form-check-label" for="boostSunflower">Sunflower</label></div>
+                                                                            <div class="form-check form-switch" style="margin-left: 4px;"><input type="checkbox" id="boostClover" class="form-check-input" checked=""><label class="form-label form-check-label" for="boostClover">Clover</label></div>
+                                                                            <div class="form-check form-switch" style="margin-left: 4px;"><input type="checkbox" id="boostSpider" class="form-check-input" checked=""><label class="form-label form-check-label" for="boostSpider">Spider</label></div>
+                                                                            <div class="form-check form-switch" style="margin-left: 4px;"><input type="checkbox" id="boostPineapple" class="form-check-input" checked=""><label class="form-label form-check-label" for="boostPineapple">Pineapple</label></div>
+                                                                            <div class="form-check form-switch" style="margin-left: 4px;"><input type="checkbox" id="boostCactus" class="form-check-input" checked=""><label class="form-label form-check-label" for="boostCactus">Cactus</label></div>
+                                                                            <div class="form-check form-switch" style="margin-left: 4px;"><input type="checkbox" id="boostPumpkin" class="form-check-input" checked=""><label class="form-label form-check-label" for="boostPumpkin">Pumpkin</label></div>
                                                                         </div>
                                                                         <div class="col">
                                                                             <h4>Red</h4>
-                                                                            <div class="form-check form-switch" style="margin-left: 4px;"><input type="checkbox" id="formCheck-84" class="form-check-input" checked=""><label class="form-label form-check-label" for="formCheck-2">Mushroom</label></div>
-                                                                            <div class="form-check form-switch" style="margin-left: 4px;"><input type="checkbox" id="formCheck-85" class="form-check-input" checked=""><label class="form-label form-check-label" for="formCheck-2">Strawberry</label></div>
-                                                                            <div class="form-check form-switch" style="margin-left: 4px;"><input type="checkbox" id="formCheck-86" class="form-check-input" checked=""><label class="form-label form-check-label" for="formCheck-2">Rose</label></div>
+                                                                            <div class="form-check form-switch" style="margin-left: 4px;"><input type="checkbox" id="boostMushroom" class="form-check-input" checked=""><label class="form-label form-check-label" for="boostMushroom">Mushroom</label></div>
+                                                                            <div class="form-check form-switch" style="margin-left: 4px;"><input type="checkbox" id="boostStrawberry" class="form-check-input" checked=""><label class="form-label form-check-label" for="boostStrawberry">Strawberry</label></div>
+                                                                            <div class="form-check form-switch" style="margin-left: 4px;"><input type="checkbox" id="boostRose" class="form-check-input" checked=""><label class="form-label form-check-label" for="boostRose">Rose</label></div>
+                                                                            <div class="form-check form-switch" style="margin-left: 4px;"><input type="checkbox" id="boostPepper" class="form-check-input" checked=""><label class="form-label form-check-label" for="boostPepper">Pepper</label></div>
+                                                                        </div>
+                                                                        <div class="col">
+                                                                            <h4>Other</h4>
+                                                                            <div class="form-check form-switch" style="margin-left: 4px;"><input type="checkbox" id="boostStump" class="form-check-input" checked=""><label class="form-label form-check-label" for="boostStump">Stump</label></div>
+                                                                            <div class="form-check form-switch" style="margin-left: 4px;"><input type="checkbox" id="boostCoconut" class="form-check-input"><label class="form-label form-check-label" for="boostCoconut">Coconut</label></div>
                                                                         </div>
                                                                     </div>
                                                                 </div>
@@ -3255,6 +3334,8 @@
     <script src="https://cdn.jsdelivr.net/npm/ms-dropdown@4.0.3/dist/js/dd.min.js"></script>
     <script src="https://code.jquery.com/ui/1.13.2/jquery-ui.js"></script>
     <script src="assets/js/2/dynamicTabs.js"></script>
+    <script src="assets/js/2/killTabHandlers.js"></script>
+    <script src="assets/js/2/boostTabHandlers.js"></script>
 </body>
 
 </html>

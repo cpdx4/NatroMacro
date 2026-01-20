@@ -9,6 +9,9 @@ var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
   return new bootstrap.Tooltip(tooltipTriggerEl)
 })
 
+const CLIENT_VERSION = 'bootstrap-collect-sync-003';
+console.log('[ui-version]', CLIENT_VERSION);
+
 
 // Gather: Variables
 var tabLimit = 3;
@@ -252,6 +255,7 @@ function buildTab (fieldName) {
             drawPathSVG(tabNumber);
         });
 
+            setTimeout(sendGatherFieldsToAhk, 10);
 
 }
 
@@ -275,8 +279,45 @@ $('#btnAddStrawberry').click(   function (e) {	buildTab("strawberry");	});
 $('#btnAddStump').click(        function (e) {	buildTab("stump");	});
 $('#btnAddSunflower').click(    function (e) {	buildTab("sunflower");	});
 
+$('#btnAddBamboo, #btnAddBlueflower, #btnAddCactus, #btnAddClover, #btnAddCoconut, #btnAddDandelion, #btnAddMountain, #btnAddMushroom, #btnAddPepper, #btnAddPineapple, #btnAddPinetree, #btnAddPumpkin, #btnAddRose, #btnAddSpider, #btnAddStrawberry, #btnAddStump, #btnAddSunflower').click(function(){
+    setTimeout(sendGatherFieldsToAhk, 10);
+});
+
 
 $('#Start-Button').click(       function (e) { ahkButtonClick(this); })
+$('#Pause-Button').click(       function (e) { ahkButtonClick(this); })
+$('#Stop-Button').click(        function (e) { ahkButtonClick(this); })
+$('#AutoClick-Button').click(   function (e) { ahkButtonClick(this); })
+$('#Status-Button').click(      function (e) { ahkButtonClick(this); })
+
+function sendGatherFieldsToAhk() {
+    if (!(window.chrome && window.chrome.webview && window.chrome.webview.hostObjects && window.chrome.webview.hostObjects.ahkUpdateState)) {
+        console.log('[ahk-send] gatherFields host not ready, skipping');
+        return;
+    }
+    var fields = [];
+    $('#gather-tab-items img').each(function() {
+        var src = $(this).attr('src') || '';
+        var match = src.match(/fieldIcons\/([^\.]+)\.png/i);
+        if (match && match[1]) {
+            fields.push(match[1]);
+        }
+    });
+    try {
+        var obj = window.chrome.webview.hostObjects.ahkUpdateState;
+        var promise = obj.func(JSON.stringify({ type: 'gatherFields', fields: fields }));
+        // attach a no-op rejection handler to prevent unhandled rejection
+        if (promise && promise.then) {
+            promise.then(
+                function() { console.log('[ahk-send] gatherFields ok'); },
+                function(err) { console.warn('[ahk-send] gatherFields:', err); }
+            );
+        }
+        console.log('[ahk-send] gatherFields', fields);
+    } catch (err) {
+        console.warn('[ahk-send] gatherFields error:', err);
+    }
+}
 
 
 // handles the "Remove" button on tabs
@@ -320,19 +361,152 @@ $(document).on('click', '.button-remove-current-tab', function(e) {
 });
 
 
-// These functions are the bridge between AHK and JavaScript provided by WebViewToo
-/*
-window.chrome.webview.addEventListener('message', ahkWebMessage);
-function ahkWebMessage(Msg) {
-    console.log(Msg.data);
+// Bridge between AHK and JavaScript provided by WebViewToo
+function parseAhkMessage(rawMessage) {
     try {
-        eval(Msg.data);
-    }
-    catch(err){
-        console.log("Failed to execute");
+        return JSON.parse(rawMessage);
+    } catch (err) {
+        // attempt a quick repair for the common malformed collect payload
+        var repaired = rawMessage
+            .replace('"collect":}', '"collect":{}')
+            .replace('"value":}', '"value":0}')
+            .replace(/^\{\{/, '{')
+            .replace(/\}\}$/, '}');
+        if (repaired !== rawMessage) {
+            try {
+                console.log('[ahk-msg] repaired malformed collect payload');
+                return JSON.parse(repaired);
+            } catch (err2) {
+                // fall through to raw logging
+            }
+        }
+        console.log('[ahk-msg] parse error, raw:', rawMessage);
+        return { type: 'raw', raw: rawMessage };
     }
 }
-*/
+
+var suppressCollectSend = false;
+
+function handleAhkMessage(event) {
+    console.log('[ahk-msg] incoming', event.data);
+    var msg = parseAhkMessage(event.data);
+    
+    if (msg.type === 'init') {
+        console.log('[ahk-msg] version', msg.version || 'unknown');
+        if (msg.gather && Array.isArray(msg.gather)) {
+            msg.gather.forEach(function(field) {
+                var normalized = (field.field || '').toLowerCase().replace(/\s+/g, '');
+                if (normalized.length && normalized !== 'none') {
+                    buildTab(normalized);
+                }
+            });
+        }
+        if (msg.collect) {
+            suppressCollectSend = true;
+            $('#chkCollectMondo').prop('checked', !!msg.collect.MondoBuffCheck).trigger('change');
+            $('#chkCollectClock').prop('checked', !!msg.collect.ClockCheck).trigger('change');
+            $('#chkCollectRoboPass').prop('checked', !!msg.collect.RoboPassCheck).trigger('change');
+            $('#chkCollectHoneystorm').prop('checked', !!msg.collect.HoneystormCheck).trigger('change');
+            $('#chkCollectHoneyDis').prop('checked', !!msg.collect.HoneyDisCheck).trigger('change');
+            $('#chkCollectTreatDis').prop('checked', !!msg.collect.TreatDisCheck).trigger('change');
+            $('#chkCollectBlueberryDis').prop('checked', !!msg.collect.BlueberryDisCheck).trigger('change');
+            $('#chkCollectStrawberryDis').prop('checked', !!msg.collect.StrawberryDisCheck).trigger('change');
+            $('#chkCollectCoconutDis').prop('checked', !!msg.collect.CoconutDisCheck).trigger('change');
+            $('#chkCollectRoyalJellyDis').prop('checked', !!msg.collect.RoyalJellyDisCheck).trigger('change');
+            $('#chkCollectGlueDis').prop('checked', !!msg.collect.GlueDisCheck).trigger('change');
+            
+            if (msg.collect.MondoAction === 'Buff') {
+                $('#btnMondoActionBuff').prop('checked', true).trigger('change');
+            } else if (msg.collect.MondoAction === 'Kill') {
+                $('#btnMondoActionKill').prop('checked', true).trigger('change');
+            }
+            if (msg.collect.MondoLootDirection === 'Left') {
+                $('#btnMondoLootLeft').prop('checked', true);
+            } else if (msg.collect.MondoLootDirection === 'Right') {
+                $('#btnMondoLootRight').prop('checked', true);
+            } else {
+                $('#btnMondoLootRandom').prop('checked', true);
+            }
+            $('#chkCollectAnt').prop('checked', !!msg.collect.AntPassCheck).trigger('change');
+            suppressCollectSend = false;
+        }
+    } else if (msg.type === 'collect') {
+        applyCollectFromAhk(msg.key, msg.value);
+    } else if (msg.type === 'kill') {
+        // let killTabHandlers handle kill updates via its own listener
+        console.log('[ahk-msg] routing kill message to killTabHandlers');
+    } else if (msg.type === 'boost') {
+        // let boostTabHandlers handle boost updates
+        applyBoostFromAhk(msg.key, msg.value);
+    } else {
+        console.log('[ahk-msg] unhandled type', msg.type);
+    }
+}
+
+if (window.chrome && window.chrome.webview) {
+    window.chrome.webview.addEventListener('message', handleAhkMessage);
+}
+
+function applyCollectFromAhk(key, value) {
+    suppressCollectSend = true;
+    switch (key) {
+        case 'MondoBuffCheck':
+            $('#chkCollectMondo').prop('checked', !!value).trigger('change');
+            break;
+        case 'MondoAction':
+            if (value === 'Buff') {
+                $('#btnMondoActionBuff').prop('checked', true).trigger('change');
+            } else if (value === 'Kill') {
+                $('#btnMondoActionKill').prop('checked', true).trigger('change');
+            }
+            break;
+        case 'MondoLootDirection':
+            if (value === 'Left') {
+                $('#btnMondoLootLeft').prop('checked', true).trigger('change');
+            } else if (value === 'Right') {
+                $('#btnMondoLootRight').prop('checked', true).trigger('change');
+            } else {
+                $('#btnMondoLootRandom').prop('checked', true).trigger('change');
+            }
+            break;
+        case 'AntPassCheck':
+            $('#chkCollectAnt').prop('checked', !!value).trigger('change');
+            break;
+        case 'ClockCheck':
+            $('#chkCollectClock').prop('checked', !!value).trigger('change');
+            break;
+        case 'RoboPassCheck':
+            $('#chkCollectRoboPass').prop('checked', !!value).trigger('change');
+            break;
+        case 'HoneystormCheck':
+            $('#chkCollectHoneystorm').prop('checked', !!value).trigger('change');
+            break;
+        case 'HoneyDisCheck':
+            $('#chkCollectHoneyDis').prop('checked', !!value).trigger('change');
+            break;
+        case 'TreatDisCheck':
+            $('#chkCollectTreatDis').prop('checked', !!value).trigger('change');
+            break;
+        case 'BlueberryDisCheck':
+            $('#chkCollectBlueberryDis').prop('checked', !!value).trigger('change');
+            break;
+        case 'StrawberryDisCheck':
+            $('#chkCollectStrawberryDis').prop('checked', !!value).trigger('change');
+            break;
+        case 'CoconutDisCheck':
+            $('#chkCollectCoconutDis').prop('checked', !!value).trigger('change');
+            break;
+        case 'RoyalJellyDisCheck':
+            $('#chkCollectRoyalJellyDis').prop('checked', !!value).trigger('change');
+            break;
+        case 'GlueDisCheck':
+            $('#chkCollectGlueDis').prop('checked', !!value).trigger('change');
+            break;
+        default:
+            break;
+    }
+    suppressCollectSend = false;
+}
 
 
 function ahkButtonClick(buttonClicked) {
@@ -388,6 +562,7 @@ $(document).on('change', '#chkCollectMondo', function() {
     } else {
         $('.CollectMondoGroup').prop('disabled', true);
     }
+    sendCollectUpdate('MondoBuffCheck', this.checked ? 1 : 0);
 });
 
 $(document).on('change', '#btnMondoActionBuff', function() {
@@ -395,6 +570,7 @@ $(document).on('change', '#btnMondoActionBuff', function() {
     $('#collectMondoSeconds').show();
     $('#collectMondoLoot').hide();
     }
+    if (this.checked) sendCollectUpdate('MondoAction', 'Buff');
 });
 
 $(document).on('change', '#btnMondoActionKill', function() {
@@ -402,6 +578,17 @@ $(document).on('change', '#btnMondoActionKill', function() {
         $('#collectMondoLoot').show();
         $('#collectMondoSeconds').hide();
     }
+    if (this.checked) sendCollectUpdate('MondoAction', 'Kill');
+});
+
+$(document).on('change', '#btnMondoLootLeft', function() {
+    if (this.checked) sendCollectUpdate('MondoLootDirection', 'Left');
+});
+$(document).on('change', '#btnMondoLootRight', function() {
+    if (this.checked) sendCollectUpdate('MondoLootDirection', 'Right');
+});
+$(document).on('change', '#btnMondoLootRandom', function() {
+    if (this.checked) sendCollectUpdate('MondoLootDirection', 'Random');
 });
 
 $(document).on('change', '#chkCollectAnt', function() {
@@ -410,9 +597,78 @@ $(document).on('change', '#chkCollectAnt', function() {
     } else {
         $('.collectAntGroup').prop('disabled', true);
     }
+    sendCollectUpdate('AntPassCheck', this.checked ? 1 : 0);
 });
+
+$(document).on('change', '#chkCollectClock', function() {
+    sendCollectUpdate('ClockCheck', this.checked ? 1 : 0);
+});
+$(document).on('change', '#chkCollectRoboPass', function() {
+    sendCollectUpdate('RoboPassCheck', this.checked ? 1 : 0);
+});
+$(document).on('change', '#chkCollectHoneystorm', function() {
+    sendCollectUpdate('HoneystormCheck', this.checked ? 1 : 0);
+});
+$(document).on('change', '#chkCollectHoneyDis', function() {
+    sendCollectUpdate('HoneyDisCheck', this.checked ? 1 : 0);
+});
+$(document).on('change', '#chkCollectTreatDis', function() {
+    sendCollectUpdate('TreatDisCheck', this.checked ? 1 : 0);
+});
+$(document).on('change', '#chkCollectBlueberryDis', function() {
+    sendCollectUpdate('BlueberryDisCheck', this.checked ? 1 : 0);
+});
+$(document).on('change', '#chkCollectStrawberryDis', function() {
+    sendCollectUpdate('StrawberryDisCheck', this.checked ? 1 : 0);
+});
+$(document).on('change', '#chkCollectCoconutDis', function() {
+    sendCollectUpdate('CoconutDisCheck', this.checked ? 1 : 0);
+});
+$(document).on('change', '#chkCollectRoyalJellyDis', function() {
+    sendCollectUpdate('RoyalJellyDisCheck', this.checked ? 1 : 0);
+});
+$(document).on('change', '#chkCollectGlueDis', function() {
+    sendCollectUpdate('GlueDisCheck', this.checked ? 1 : 0);
+});
+
+function sendCollectUpdate(key, value) {
+    if (!(window.chrome && window.chrome.webview && window.chrome.webview.hostObjects && window.chrome.webview.hostObjects.ahkUpdateState)) {
+        console.warn('[ahk-send] collect host not ready');
+        return;
+    }
+    if (suppressCollectSend) {
+        return;
+    }
+    console.log('[ahk-send] collect', key, value);
+    try {
+        var obj = window.chrome.webview.hostObjects.ahkUpdateState;
+        var promise = obj.func(JSON.stringify({ type: 'collect', key: key, value: value }));
+        // attach a no-op rejection handler to prevent unhandled rejection
+        if (promise && promise.then) {
+            promise.then(
+                function() { },
+                function(err) { console.warn('[ahk-send] collect:', err); }
+            );
+        }
+    } catch (err) {
+        console.warn('[ahk-send] collect error:', err);
+    }
+}
 
 // KILL Tab
 
-// BOOST taab
+// BOOST Tab - Initialize handlers
+$(document).ready(function() {
+    if (window.boostTabHandlers && window.boostTabHandlers.initialize) {
+        window.boostTabHandlers.initialize();
+    } else {
+        console.warn('[init] boostTabHandlers not available');
+    }
+});
 
+// Helper function to apply boost settings from AHK (called from handleAhkMessage)
+function applyBoostFromAhk(key, value) {
+    if (window.boostTabHandlers && window.boostTabHandlers.applyFromAhk) {
+        window.boostTabHandlers.applyFromAhk(key, value);
+    }
+}
