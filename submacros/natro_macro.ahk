@@ -141,16 +141,20 @@ GroupAdd("ScriptGroup", "ahk_pid" ScriptPID)
 
 ;Create the WebviewWindow/GUI
 ;///////////////////////////////////////////////////////////////////////////////////////////
-MyWindow := WebviewWindow()
+;WebViewToo v1.0.1 (breaking update): `WebviewWindow` was renamed to `WebViewGui`.
+;`Load()` was replaced by `Navigate()` and the title moved to the constructor (native Gui).
+;Preserve the original `WebviewWindow` window style (resizable, native caption, tool window).
+MyWindow := WebViewGui("+Resize +Caption +ToolWindow", "Natro Macro (Gummy Boot(strap) Edition - CONCEPT)")
 MyWindow.OnEvent("Close", (*) => ExitApp())
-MyWindow.Load("BootstrapGUI/index.html")
+MyWindow.Navigate("BootstrapGUI/index.html")
 MyWindow.Debug()
-MyWindow.OnEvent("NavigationCompleted", (*) => SetTimer(SendBootstrapState, -50))
+;`NavigationCompleted` is now a `WebViewCtrl` handler method (proxied onto `WebViewGui`), not a GUI event.
+MyWindow.NavigationCompleted((*) => SetTimer(SendBootstrapState, -50))
 MyWindow.AddHostObjectToScript("ahkButtonClick", {func:WebButtonClickEvent})
 MyWindow.AddHostObjectToScript("ahkCopyGlyphCode", {func:CopyGlyphCodeEvent})
 MyWindow.AddHostObjectToScript("ahkFormSubmit", {func:FormSubmitEvent})
 MyWindow.AddHostObjectToScript("ahkUpdateState", {func:WebUpdateState})
-MyWindow.Show("w1050 h650 Center", "Natro Macro (Gummy Boot(strap) Edition - CONCEPT)")
+MyWindow.Show("w1050 h650 Center")
 
 ; Load all settings from INI files into global variables
 nm_LoadKillSettings()
@@ -1132,9 +1136,14 @@ FormSubmitEvent(source, form) {
         SetTimer((*) => FormSubmitEvent("ahk", form), -1)
     }
     else {
-        formValues := MyWindow.GetFormData(form)
-        MsgBox(formValues["inputEmail"])
-        MsgBox(WebviewWindow.forEach(formValues, form))
+        ;WebViewToo v1.0.1 (breaking update): `GetFormData()` was removed; collect form
+        ;data directly with `ExecuteScript` and `WebViewCtrl.ForEach` (replaces `WebviewWindow.forEach`).
+        formValues := {}
+        js := "Array.from(document.getElementById('" form "').elements).filter(e => ['reset','submit','button'].indexOf(e.type) === -1).map(e => ({id: e.id, value: e.value}))"
+        try formValues := JSON.parse(MyWindow.ExecuteScript("return JSON.stringify(" js ")"), true, true)
+        if (formValues.Has("inputEmail"))
+            MsgBox(formValues["inputEmail"])
+        MsgBox(WebViewCtrl.ForEach(formValues, form))
     }
 }
 ;

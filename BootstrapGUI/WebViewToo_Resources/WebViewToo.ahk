@@ -1,10 +1,7 @@
 ;///////////////////////////////////////////////////////////////////////////////////////////
-; This is my first attempt at creating a class
-; The goal of this class is to smash together 
-; Thqby's WebView2.ahk library
-; 	https://github.com/thqby/ahk2_lib/blob/master/WebView2/WebView2.ahk
-; With G33k's Neutron.ahk library
-; 	https://github.com/G33kDude/Neutron.ahk
+; WebViewToo.ahk v1.0.1-git
+; Copyright (c) 2025 Ryan Dingman (known also as Panaku, The-CoDingman)
+; https://github.com/The-CoDingman/WebViewToo
 ;
 ; MIT License
 ;
@@ -25,952 +22,1204 @@
 ; LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 ; OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 ; SOFTWARE.
-;
-;-------------------------------------------------------------------------------------------
-;
-;	v0.1
-;		Based Features Created and working
-;		METHODS:
-;           WebviewWindow.Load(filename)
-;           WebviewWindow.Show(options, title) ;neither parameter required
-;           WebviewWindow.Hide()
-;           WebviewWindow.Destroy()
-;           WebviewWindow.Debug() ; Opens DevTools for Edge
-;           WebviewWindow.Opt(options) ; Used to assign GUI options to the WebviewWindow
-;           WebviewWindow.closeWV()
-;           WebviewWindow.minimizeWV()
-;           WebviewWindow.maximizeWV()
-;           WebviewWindow.qp(script) ;Shorthand to get information from webpage, can be used for variable declaration
-;           WebviewWindow.QueryPage(script, varRef, callbackFunc)
-;           WebviewWindow.printToPdf(Filename, orientation) ;shorthand method for printToPdf, you will be asked to choose the directory to save the file to and if you do not supply a filename you will be asked to input one
-;           WebviewWindow.GetFormData(formElement)
-;           static WebviewWindow.forEach(obj) ;Used to enumerate information from event handlers
-;
-;
-;		Example of in-line onclick to call an AHK function
-;			onclick="(async function(){obj = await window.chrome.webview.hostObjects.[objectName];obj.func((await [obj.paramater]));})();"
 ;///////////////////////////////////////////////////////////////////////////////////////////
 
-#Requires Autohotkey v2.0
-class WebviewWindow {
-	static TEMPLATE := {}
-	static TEMPLATE.CODE := "
-	(
-		<!DOCTYPE html>
-		<html>
-			<head>
-				<meta http-equiv='X-UA-Compatible' content='IE=edge'>
-				<style>
-					html, body {
-						width: 100%; height: 100%;
-						margin: 0; padding: 0;
-						font-family: sans-serif;
-					}
+#Requires AutoHotkey v2
+#Include WebView2.ahk
 
-					body {
-						display: flex;
-						flex-direction: column;
-					}
+class WebViewGui extends Gui {
+    /**
+     * Creates a new Gui with a WebViewCtrl and necessary custom handling attached.
+     * @param Options AlwaysOnTop Border Caption Disabled -DPIScale LastFound
+     * MaximizeBox MinimizeBox MinSize600x600 MaxSize800x800 Resize
+     * OwnDialogs '+Owner' OtherGui.hwnd +Parent
+     * SysMenu Theme ToolWindow
+     * @param Title The window title. If omitted, it defaults to the current value of A_ScriptName.
+     * @param EventObj OnEvent, OnNotify and OnCommand can be used to register methods of EventObj to be called when an event is raised
+     * @param {Object} WebViewSettings May contain a CreatedEnvironment, DataDir, EdgeRuntime, Options, or DllPath
+     * @returns {WebViewGui}
+     */
+    __New(Options?, Title?, EventObj?, WebViewSettings := {}) {
+        super.__New(Options?, Title?, EventObj?)
+        DefaultWidth := WebViewSettings.HasProp("DefaultWidth") ? WebViewSettings.DefaultWidth : 640
+        DefaultHeight := WebViewSettings.HasProp("DefaultHeight") ? WebViewSettings.DefaultHeight : 480
+        /** @type {WebViewCtrl} */
+        this.Control := WebViewCtrl(this, "w" DefaultWidth " h" DefaultHeight " vWebViewCtrl", WebViewSettings?)
+        this.Control.IsNonClientRegionSupportEnabled := True
+        this.Control.wv.AddHostObjectToScript("gui", {
+            __Call: ((Hwnd, Th, Name, Q) => GuiFromHwnd(Hwnd).%Name%(Q*)).Bind(this.Hwnd)
+        })
+        this.Sizers := WebViewSizer("-Caption +Resize +Parent" this.Hwnd)
+        this.OnEvent("Size", this.Size)
+        for Prop in this.Control.OwnProps() {
+            if (!this.HasProp(Prop)) {
+                this.DefineProp(Prop, this.Control.GetOwnPropDesc(Prop))
+            }
+        }
+        DllCall("Dwmapi.dll\DwmSetWindowAttribute", "Ptr", this.Hwnd, "UInt", DWMWA_WINDOW_CORNER_PREFERENCE := 33, "Ptr*", pvAttribute := 2, "UInt", 4)
+        this.Move(,, DefaultWidth, DefaultHeight) ;Sets an initial size that is somewhat reasonable
+        this.Control.wvc.Fill() ;Fill the window after setting initial size
+        WebViewSizer.ToggleSizer(this) ;Toggle Sizers
+        return this
+    }
 
-					header {
-						width: 100%;
-						display: flex;
-						background: silver;
-						font-family: Segoe UI;
-						font-size: 9pt;
-					}
+    LastMinMax := ""
+    Size(MinMax, Width, Height) {
+        ; Resize the WebView2 to fit the GUI
+        this.Control.Move(0, 0, Width, Height)
 
-					.title-bar {
-						padding: 0.35em 0.5em;
-						flex-grow: 1;
-					}
+        ;Resize the sizing handles to fit the GUI
+        this.Sizers.Move(0, 0, Width, Height)
 
-					.title-btn {
-						padding: 0.35em 1.0em;
-						cursor: pointer;
-						vertical-align: bottom;
-						font-family: Webdings;
-						font-size: 11pt;
-					}
+        if (MinMax == this.LastMinMax) {
+            return
+        }
+        this.LastMinMax := MinMax
 
-					body .title-btn-restore {
-						display: none
-					}
+        ; When not visible, WebView2 stops rendering reducing its CPU load. When
+        ; added to a hidden window, like we do in this class, the WebView2 is
+        ; created non-visible by default and must be made visible before it will
+        ; appear. This handler satisfies both situations.
+        this.control.wvc.IsVisible := MinMax != -1
 
-					body.neutron-maximized .title-btn-restore {
-						display: block
-					}
+        if (MinMax == 1) { ; -1, 0, 1
+            try this.Control.ExecuteScriptAsync("document.body.classList.add('ahk-maximized')")
+            this.Sizers.Hide() ;Always hide the Sizers if the window is maximized
+        } else {
+            try this.Control.ExecuteScriptAsync("document.body.classList.remove('ahk-maximized')")
+            WebViewSizer.ToggleSizer(this) ;Check if Sizers should be displayed or not
+        }
+    }
 
-					body.neutron-maximized .title-btn-maximize {
-						display: none
-					}
-
-					.title-btn:hover {
-						background: rgba(0, 0, 0, .2);
-					}
-
-					.title-btn-close:hover {
-						background: #dc3545;
-					}
-
-					.main {
-						flex-grow: 1;
-						padding: 0.5em;
-						overflow: auto;
-					}
-				</style>
-				
-				<style id="customCSS"></style>
-			</head>
-
-			<body>
-
-				<div class='main' id="customHTML"><a href='https://www.google.com'>Google!</a></div>
-				
-				<script id="customJS"></script>
-				
-			</body>
-		</html>
-	)"
-	
-	static TEMPLATE.NAME := "Template.html"
-	
-	static LOCALAPPDIR := "C:\Users\" A_UserName "\AppData\Local\WebViewToo\"
-
-	;Set Default Values as fallbacks
-	;gui := unset ;The underlying GUI Object representing the window
-	bound := {} ;Bound functions with circular references that must be freed before the class can be successfully garbage collected
-	wvc := "" ;Prevents 'variable unset' error
-	wv := "" ;Prevents 'variable unset' error
-	nwr := "" ;Prevenets 'variable unset' error
-	width := (A_ScreenWidth / 2) ;Base width if not provided
-	height := (A_ScreenHeight / 2) ;Base height if not provided
-	
-	;Windows Messages
-	WM_DESTROY => 0x02
-	WM_SIZE => 0x05
-	WM_NCCALCSIZE => 0x83
-	WM_NCHITTEST => 0x84
-	WM_NCLBUTTONDOWN => 0xA1
-	WM_KEYDOWN => 0x100
-	WM_KEYUP => 0x101
-	WM_SYSKEYDOWN => 0x104
-	WM_SYSKEYUP => 0x105
-	WM_MOUSEMOVE => 0x200
-	WM_LBUTTONDOWN => 0x201
-	LISTENERS := [this.WM_DESTROY, this.WM_SIZE, this.WM_NCCALCSIZE, this.WM_KEYDOWN, this.WM_KEYUP, this.WM_SYSKEYDOWN, this.WM_SYSKEYUP, this.WM_LBUTTONDOWN]
-	
-	;formData := "" ;Commented Out to see if needed
-
-	/**
-	* The count of pixels inset from the window edge that the sizing handles to
-	* resize the window will appear for.
-	**/
-	;border_size := 6 ;Used in _WindowProc
-
-	;modifiers := 0 ;Used in _OnMessage
-
-	/* Used in _OnMessage
-	;Shortcuts to prevent the web page from processing 
-	disabled_shortcuts := Map(
-		; No modifiers
-		0, Map(
-			this.VK_F5, true	; Refresh page
-		),
-		; Ctrl
-		this.MODIFIER_BITMAP[this.VK_CONTROL], Map(
-			GetKeyVK("F"), true,	; Ctrl+F find
-			GetKeyVK("L"), true,	; Ctrl+L focus location bar
-			GetKeyVK("N"), true,	; Ctrl+N open new tab
-			GetKeyVK("O"), true,	; Ctrl+O open file
-			GetKeyVK("P"), true,	; Ctrl+P print page
-		)
-	)
-	*/
-	
-	
-	
-	__New(html := "", css := "", js := "") {
-		;EnvSet("WEBVIEW2_DEFAULT_BACKGROUND_COLOR", "0xFF006600") ;Can use this to set the default backgroundColor for the WebView2
-		this.gui := Gui("+Resize +Caption +ToolWindow")
-		this.gui.BackColor := "000000"
-		this.gui.Show("x-10000 y-10000 w" (A_ScreenWidth / 2) " h" (A_ScreenHeight / 2)) ;I can't seem to attach the WebView2 to the GUI unless it is visible on the screen
-		this.wvc := WebView2.create(this.gui.Hwnd)
-		this.wv := this.wvc.CoreWebView2
-		this.do := WebView2.DownloadOperation
-		this.wv.NavigateToString(WebviewWindow.TEMPLATE.CODE)
-		this.CurrFileInstallFunc := this.ResourceInstall
-		if (html != "" || css != "" || js != "") {
-			this.wv.ExecuteScript("document.getElementById('customHTML').innerHTML = '" html "';", 0)
-			this.wv.ExecuteScript("document.getElementById('customJS').innerHTML = '" js "';", 0)
-			this.wv.ExecuteScript("document.getElementById('customCSS').innerHTML = '" css "';", 0)
-		}
-		this.gui.OnEvent("Size", (*) => this.Fill())
-		this.Hide()
-		this.gui.Opt("-ToolWindow")
-		if (!DirExist(WebviewWindow.localappdir)) {
-			DirCreate(WebviewWindow.localappdir)
-		}
-	}
-
-	;-------------------------------------------------------------------------------------------
-	
-	Load(Filename, DeleteFiles := 0) {
-		if (InStr(Filename, "https://")) {
-			Url := Filename
-		}
-		else {
-			if (A_IsCompiled) {
-				this.FileInstallFunc(Filename) ;NewtronFileInstall(FileName)
-				Url := WebviewWindow.localappdir "\" Filename
-				if (DeleteFiles) {
-					SplitPath(WebviewWindow.localappdir "\" Filename, &OutFilename, &OutDir)
-					SetTimer((*) => DirDelete(OutDir, 1), -10000)
-				}
-			}
-			else {
-				Url := A_WorkingDir "/" Filename
-			}
-		}
-		this.wv.Navigate(Url)
-		return this
-		;Sleep(1000) ;This is here to allow the webpage time to navigate away from the current page (Which is most likely the TEMPLATE)
-	}
-	
-	FileInstallFunc {
-		get => this.CurrFileInstallFunc
-		set => this.CurrFileInstallFunc := Value
-	}
-
-	ResourceInstall(Filename) {
-		return
-	}
-
-	;-------------------------------------------------------------------------------------------
-	
-	Show(options := "", title := this.title) {
-		width := RegExMatch(options, "w\s*\K\d+", &match) ? match[] : this.width
-		height := RegExMatch(options, "h\s*\K\d+", &match) ? match[] : this.height
-
-		; AutoHotkey sizes the window incorrectly, trying to account for borders
-		; that aren't actually there. Call the function AHK uses to offset and
-		; apply the change in reverse to get the actual wanted size.
-		rect := Buffer(16, 0)
-		DllCall("AdjustWindowRectEx",
-			"Ptr", rect,	; LPRECT lpRect
-			"UInt", 0x80CE0000,	; DWORD  dwStyle
-			"UInt", 0,	; BOOL   bMenu
-			"UInt", 0,	; DWORD  dwExStyle
-			"UInt"	; BOOL
-		)
-		width += NumGet(rect, 0, "Int") - NumGet(rect, 8, "Int")
-		height += NumGet(rect, 4, "Int") - NumGet(rect, 12, "Int")
-
-		this.gui.title := title
-		this.gui.Show(options " w" width " h" height)
-		return this
-	}
-	
-	;-------------------------------------------------------------------------------------------
-	
-	Close() {
-		;this.wvc.Close() ;Close the WebView2Controller before closing the window
-		WinClose("ahk_id" this.gui.hWnd)
-		return this
-	}
-
-	;-------------------------------------------------------------------------------------------
-	
-	Debug() {
-		this.wv.OpenDevToolsWindow()
-		this.wv.ExecuteScript("DebugMode = 1;", 0)
-		return this
-	}
-		
-	;-------------------------------------------------------------------------------------------
-		
-	qp(script) {
-		this.QueryPage(script, &queryResponse)
-		while (!IsSet(queryResponse)) {
-			Sleep(50)
-		}
-		return queryResponse
-	}
-	
-	QueryPage(script, variable := "QueryPageVariablePlaceholder", callback := "QueryPageCallbackPlaceholder") {
-		QueryPageResponseHandler(WebviewWindow, varName, Response) {
-			%varName% := Response
-		}
-		static QueryPageResponsePlaceholder := "QueryPageResponsePlaceholder"
-		if (variable = "QueryPageVariablePlaceholder") {
-			variable := QueryPageResponsePlaceholder
-			variable := &%variable%
-		}
-		if (callback = "QueryPageCallbackPlaceholder") {
-			callback := QueryPageResponseHandler
-		}
-		script :=  RegExReplace(script, "'", "`""), script := RegExReplace(script, ".*\Kreturn ?", "output = ")
-		try this.wv.AddHostObjectToScript("QueryPage", {Webview:this, varName:variable, func:callback})
-		this.wv.ExecuteScript("(async function(){obj = window.chrome.webview.hostObjects.QueryPage;try{obj.script = eval('" script "');}catch(err){obj.script = 'There was an error';}if (typeof output !== 'undefined'){obj.script = output;}obj.func((await obj.Webview), (await obj.varName), (await obj.script));})();", 0)
-		SetTimer((*) => this.RemoveQueryPageHostObject, -100)
-	}
-	
-	RemoveQueryPageHostObject() {
-		try	this.wv.RemoveHostObjectFromScript("QueryPage")
-	}
-
-	;-------------------------------------------------------------------------------------------
-	
-	simplePrintToPdf(Filename := "", Orientation := "portrait") {
-		;if (RegExMatch(Filename, "^[a-zA-Z]:\\", &match)) || (RegExMatch(Filename, "^\\\\", &match)) {} ;Checks to see if the Filename contains a Drive Letter or network path at the start
-		/*
-		OutputDir := DirSelect(, 3, "Select the Folder you'd like to save your PDF file to")
-		if (OutputDir = "") {
-			return (MsgBox("Print Canceled", "Print to PDF"))
-		}
-		if (Filename = "") {
-			FilenameInput := InputBox("Please enter a name for your PDF: ", "Printing to PDF", "w210 h88")
-			if (FilenameInput.Result != "OK") {
-				return (MsgBox("Print Canceled", "Print to PDF"))
-			}
-			else {
-				Filename := FilenameInput.Value
-			}
-		}
-		if (FileExist(OutputDir "\" Filename ".pdf")) {
-			if (MsgBox("The following file already exists, would you like to overwrite it?`n`n" OutputDir "\" Filename ".pdf", "Print to PDF",  4) = "No") {
-				return (MsgBox("Print Canceled", "Print to PDF"))
-			}
-		}
-		settings := this.wv.Environment.CreatePrintSettings()
-		if (StrLower(Orientation) = "landscape") {
-			settings.Orientation := WebView2.PRINT_ORIENTATION.LANDSCAPE
-		}
-		else {
-			settings.Orientation := WebView2.PRINT_ORIENTATION.PORTRAIT
-		}
-		this.wv.PrintToPdf(OutputDir "\" Filename ".pdf", settings, WebView2.Handler(this.simplePrintToPdfHandler))
-		Loop {
-			if (FileExist(OutputDir "\" Filename ".pdf")) {
-				if (MsgBox("Would you like to open this PDF?", "Print to PDF", 4) = "Yes") {
-					Run(OutputDir "\" Filename ".pdf")
-				}
-				break
-			}
-			else {
-				Sleep(100)
-			}
-		}
-		*/
-		
-		Filename := FileSelect("S",,, "*.pdf")
-		if (Filename = "") {
-			return (MsgBox("Print Canceled", "Print to PDF"))
-		}
-		if (FileExist(Filename)) {
-			if (MsgBox("The following file already exists, would you like to overwrite it?`n`n" Filename, "Print to PDF",  4) = "No") {
-				return (MsgBox("Print Canceled", "Print to PDF"))
-			}
-		}
-
-		settings := this.wv.Environment.CreatePrintSettings()
-		if (StrLower(Orientation) = "landscape") {
-			settings.Orientation := WebView2.PRINT_ORIENTATION.LANDSCAPE
-		}
-		else {
-			settings.Orientation := WebView2.PRINT_ORIENTATION.PORTRAIT
-		}
-		this.wv.PrintToPdf(Filename, settings, WebView2.Handler(this.simplePrintToPdfHandler))
-		Loop {
-			if (FileExist(Filename)) {
-				if (MsgBox("Would you like to open this PDF?", "Print to PDF", 4) = "Yes") {
-					Run(Filename)
-				}
-				break
-			}
-			else {
-				Sleep(50)
-			}
-		}
-	}
-
-	simplePrintToPdfHandler(handlerptr, result, success) {
-		if (!success) {
-			MsgBox("Erorr: " result, "Simple PrintToPdf")
-		}
-	}
-
-	;-------------------------------------------------------------------------------------------
-
-	GetFormData(formElement, useIdAsName := true) {
-		script := "var form = document.getElementById('" formElement "');var elements = form.elements;var elementsArray = Array.from(elements);let text = '';elementsArray.forEach( function(item, index) { if ((item.type !== 'reset') && (item.type !== 'submit') && (item.type !== 'button')){text += '' + item.id + '<br>' + item.value + '<br>';}});var output = text;"
-		this.QueryPage(script, &formData)
-		while (!IsSet(formData)) { ; Wait for a response from the Webpage
-			Sleep(50)
-		}
-		formDataArray := StrSplit(formData, "<br>")
-		formData := Map(), keyCount := 1, valueCount := 2
-		Loop(formDataArray.length / 2) {
-			formData.Set(formDataArray[keyCount], formDataArray[valueCount])
-			keyCount += 2, valueCount += 2
-		}
-		return formData
-	}	
-
-	;-------------------------------------------------------------------------------------------
-	
-	static CreateTempHtmlFile(Filename := WebviewWindow.TEMPLATE.NAME, Contents := WebviewWindow.TEMPLATE.CODE, Timeout := 10000) {
-		Template := FileOpen(Filename, "w")
-		Template.Write(Contents)
-		Template.Close()
-		SetTimer((*) => FileDelete(Filename), -Timeout)
-	}
-	
-	;-------------------------------------------------------------------------------------------
-
-	static DeleteInstalledFiles(FileArray) {
-		for key, value in FileArray {
-			try FileDelete(value)
-		}
-	}
-	
-	;-------------------------------------------------------------------------------------------
-	
-	static EncodeURI(Uri, RegEx := "[0-9A-Za-z]") {
-		NumPut("ptr", StrPut(Uri, "UTF-8"), output := Buffer(600, 0))
-		StrPut(Uri, output, "UTF-8")
-		While Code := NumGet(output, A_Index - 1, "UChar") {
-			Res .= (Char := Chr(Code)) ~= RegEx ? Char : Format("%{:02X}", Code)
-		}
-		return Res
-	}
-	
-	;-------------------------------------------------------------------------------------------
-	
-	static LoadFromResource(ResourceName) {
-		if (!A_IsCompiled) {
-			TextData := FileRead(ResourceName)
-		}
-		else {
-			Module := DllCall("GetModuleHandle", "Ptr", 0, "Ptr")
-			Resource := DllCall("FindResource", "Ptr", Module, "Str", ResourceName, "UInt", RT_RCDATA := 10, "Ptr")
-			ResourceSize := DllCall("SizeofResource", "Ptr", Module, "Ptr", Resource)
-			ResourceData := DllCall("LoadResource", "Ptr", Module, "Ptr", Resource, "Ptr")
-			ConvertedData := DllCall( "LockResource", "Ptr", ResourceData, "Ptr")
-			TextData := StrGet(ConvertedData, ResourceSize, "UTF-8")
-			While (RegExMatch(TextData, '<script.*?src="(?!https)(.*?)">')) {
-				MatchPos := RegExMatch(TextData, '<script.*?src="(.*?)">', &Match)
-				if (MatchPos != 0) {
-					MatchPos := RegExMatch(Match[], '"(.*?)"', &Url)
-					if (MatchPos != 0) {
-						ScriptUrl := Trim(Url[], "`"")
-						ScriptText := WebviewWindow.LoadFromResource("Pages/" ScriptUrl)
-						TextData := RegExReplace(TextData, '<script.*?src="(.*?)">', "<script>" ScriptText,, 1)
-					}
-				}
-			}
-			While (RegExMatch(TextData, '<link.*?href="(?!https)(.*?)" rel="stylesheet">')) {
-				MatchPos := RegExMatch(TextData, '<link.*?href="(.*?)" rel="stylesheet">', &Match)
-				if (MatchPos != 0) {
-					MatchPos := RegExMatch(Match[], '"(.*?)"', &Url)
-					if (MatchPos != 0) {
-						ScriptUrl := Trim(Url[], "`"")
-						ScriptText := WebviewWindow.LoadFromResource("Pages/" ScriptUrl)
-						TextData := RegExReplace(TextData, '<link.*?href="(.*?)" rel="stylesheet">', "<style>" ScriptText "</style>",, 1)
-					}
-				}
-			}
-		}
-		return TextData
-	}
-	
-	;-------------------------------------------------------------------------------------------
-	
-	static forEach(Obj, Parent := "Default") {
-		output := ""
-		try {
-			for k, v, in Obj {
-				try {
-					output .= Parent " >> " k ": " v "`n"
-				}
-				catch {
-					output .= WebviewWindow.forEach(v, Parent " >> " k)
-				}
-			}
-		}
-		return output
-	}
-
-	static getParent(obj) {
-		try {
-			if (InStr(obj.Settings.UserAgent, "ParentID/")) {
-				RegExMatch(obj.Settings.UserAgent, "\d+$", &match)
-				output := match[]
-				return output
-			}
-		}
-	}
-
-	;-------------------------------------------------------------------------------------------
-	/**
-	 * Makes text safe to be embedded in HTML
-	 * Reference https://stackoverflow.com/a/6234804
-	 * @param {String} unsafe An HTML-unsafe string
-	 * @return {String} An HTML safe string
-	**/
-	static EscapeHTML(unsafe) {
-		unsafe := StrReplace(unsafe, "&", "&amp;")
-		unsafe := StrReplace(unsafe, "<", "&lt;")
-		unsafe := StrReplace(unsafe, ">", "&gt;")
-		unsafe := StrReplace(unsafe, '"', "&quot;")
-		unsafe := StrReplace(unsafe, "'", "&#039;")
-		return unsafe
-	}
-
-	/**
-	 * Wrapper for Format that applies EscapeHTML to each value before passing
-	 * them on. Useful for dynamic HTML generation.
-	 * @param {String} formatStr The format string
-	 * @param values...          The placeholder values
-	 * @return {String} The formatted version of the specified string
-	**/
-	static FormatHTML(formatStr, values*) {
-		for i, value in values {
-			values[i] := WebviewWindow.EscapeHTML(value)
-		}
-		return Format(formatStr, values*)
-	}
+    __Delete() {
+        ; Placeholder
+    }
 
     ;-------------------------------------------------------------------------------------------
-    ;Inherited GUI Methods
+    ;Default GUI Overrides
+    /** @throws {Error} Not applicable for a WebViewGui. */
+    NotApplicableError(Msg := "") {
+        throw Error("Not applicable for a WebViewGui. " Msg, -2)
+    }
+
+    /** @throws {Error} Not applicable for a WebViewGui. */
+    Add(ControlType := "", Options := "", Value := "") => this.NotApplicableError("Did you mean AddRoute()?")
+
+    /** @throws {Error} Not applicable for a WebViewGui. */
+    AddActiveX(Options := "", Value := "") => this.NotApplicableError()
+
+    /** @throws {Error} Not applicable for a WebViewGui. */
+    AddButton(Options := "", Value := "") => this.NotApplicableError()
+
+    /** @throws {Error} Not applicable for a WebViewGui. */
+    AddCheckbox(Options := "", Value := "") => this.NotApplicableError()
+
+    /** @throws {Error} Not applicable for a WebViewGui. */
+    AddComboBox(Options := "", Value := "") => this.NotApplicableError()
+
+    /** @throws {Error} Not applicable for a WebViewGui. */
+    AddCustom(Options := "", Value := "") => this.NotApplicableError()
+
+    /** @throws {Error} Not applicable for a WebViewGui. */
+    AddDateTime(Options := "", Value := "") => this.NotApplicableError()
+
+    /** @throws {Error} Not applicable for a WebViewGui. */
+    AddDropDownList(Options := "", Value := "") => this.NotApplicableError()
+
+    /** @throws {Error} Not applicable for a WebViewGui. */
+    AddDDL(Options := "", Value := "") => this.NotApplicableError()
+
+    /** @throws {Error} Not applicable for a WebViewGui. */
+    AddEdit(Options := "", Value := "") => this.NotApplicableError()
+
+    /** @throws {Error} Not applicable for a WebViewGui. */
+    AddGroupBox(Options := "", Value := "") => this.NotApplicableError()
+
+    /** @throws {Error} Not applicable for a WebViewGui. */
+    AddHotkey(Options := "", Value := "") => this.NotApplicableError()
+
+    /** @throws {Error} Not applicable for a WebViewGui. */
+    AddLink(Options := "", Value := "") => this.NotApplicableError()
+
+    /** @throws {Error} Not applicable for a WebViewGui. */
+    AddListBox(Options := "", Value := "") => this.NotApplicableError()
+
+    /** @throws {Error} Not applicable for a WebViewGui. */
+    AddListView(Options := "", Value := "") => this.NotApplicableError()
+
+    /** @throws {Error} Not applicable for a WebViewGui. */
+    AddMonthCal(Options := "", Value := "") => this.NotApplicableError()
+
+    /** @throws {Error} Not applicable for a WebViewGui. */
+    AddPicture(Options := "", Value := "") => this.NotApplicableError()
+
+    /** @throws {Error} Not applicable for a WebViewGui. */
+    AddPic(Options := "", Value := "") => this.NotApplicableError()
+
+    /** @throws {Error} Not applicable for a WebViewGui. */
+    AddProgress(Options := "", Value := "") => this.NotApplicableError()
+
+    /** @throws {Error} Not applicable for a WebViewGui. */
+    AddRadio(Options := "", Value := "") => this.NotApplicableError()
+
+    /** @throws {Error} Not applicable for a WebViewGui. */
+    AddSlider(Options := "", Value := "") => this.NotApplicableError()
+
+    /** @throws {Error} Not applicable for a WebViewGui. */
+    AddStatusBar(Options := "", Value := "") => this.NotApplicableError()
+
+    /** @throws {Error} Not applicable for a WebViewGui. */
+    AddTab(Options := "", Value := "") => this.NotApplicableError()
+
+    /** @throws {Error} Not applicable for a WebViewGui. */
+    AddTab2(Options := "", Value := "") => this.NotApplicableError()
+
+    /** @throws {Error} Not applicable for a WebViewGui. */
+    AddTab3(Options := "", Value := "") => this.NotApplicableError()
+
+    /** @throws {Error} Not applicable for a WebViewGui. */
+    AddText(Options := "", Value := "") => this.NotApplicableError("Did you mean AddTextRoute()?")
+
+    /** @throws {Error} Not applicable for a WebViewGui. */
+    AddTreeView(Options := "", Value := "") => this.NotApplicableError()
+
+    /** @throws {Error} Not applicable for a WebViewGui. */
+    AddUpDown(Options := "", Value := "") => this.NotApplicableError()
+
+    /** Close WebView2 instance and delete the window. */
     Destroy() {
-		this.gui.Destroy()
-		return this
-	}
+        this.Sizers.Destroy()
+        this.Sizers := 0
+        Super.Destroy()
+    }
 
-    Flash(Blink?) {
-		if (IsSet(Blink)) {
-			this.gui.Flash(Blink)
-		}
-		else {
-			this.gui.Flash
-		}
-	}
+    /** @throws {Error} Not applicable for a WebViewGui. */
+    SetFont(Options := "", FontName := "") => this.NotApplicableError()
 
-    GetClientPos(params*) => this.gui.GetClientPos(params*)
-    GetPos(params*) => this.gui.GetPos(params*)
+    /**
+     * Display window. It can also minimize, maximize or move the window.
+     * @param Options (Optional Parameter) Positioning: Xn Yn Wn Hn  Center xCenter yCenter AutoSize
+     * Minimize Maximize Restore NoActivate NA Hide
+     */
+    Show(Options := "") {
+        if (!((Style := WinGetStyle(this.Hwnd)) & 0x00800000)) {
+            this.GetClientPos(&gX, &gY, &gWidth, &gHeight)
+            Width := RegExMatch(Options, "w\s*\K\d+", &Match) ? Match[] : gWidth
+            Height := RegExMatch(Options, "h\s*\K\d+", &Match) ? Match[] : gHeight
 
-    Hide() {
-		this.gui.Hide()
-		return this
-	}
+            Rect := Buffer(16, 0)
+            DllCall("AdjustWindowRectEx",
+                "Ptr", Rect,    ; LPRECT lpRect
+                "UInt", Style,  ; DWORD dwStyle
+                "UInt", 0,      ; BOOL bMenu
+                "UInt", 0,      ; DWORD dwExStyle
+                "UInt"          ; BOOL
+            )
+            Options .= " w" Width += (NumGet(Rect, 0, "Int") - NumGet(Rect, 8, "Int"))
+            Options .= " h" Height += (NumGet(Rect, 4, "Int") - NumGet(Rect, 12, "Int"))
+        }
 
-    Maximize() {
-		if DllCall("IsZoomed", "UPtr", this.gui.hWnd) {
-			this.gui.Restore()
-		} else {
-			this.gui.Maximize()
-		}
-		this.wvc.Fill()
-		return this
-	}
+        Super.Show(Options)
+    }
 
-    Minimize() {
-		this.gui.Minimize()
-		return this
-	}
+    /** @throws {Error} Not applicable for a WebViewGui. */
+    Submit(Hide := true) => this.NotApplicableError()
 
-    Move(params*) => this.gui.Move(params*)
+    /** @throws {Error} Not applicable for a WebViewGui. */
+    FocusedCtrl {
+        get => this.NotApplicableError()
+    }
 
-    OnEvent(eventName, callback, addRemove := unset) {
-		this.gui.OnEvent(eventName, (p*) => (p[1] := this, callback(p*)), addRemove?)
-		return this
-	}
+    /** @throws {Error} Not applicable for a WebViewGui. */
+    MarginX {
+        get => this.NotApplicableError()
+        set => this.NotApplicableError()
+    }
 
-    Opt(options) {
-		this.gui.Opt(options)
-		return this
-	}
-    
-    Restore() => this.gui.Restore()
+    /** @throws {Error} Not applicable for a WebViewGui. */
+    MarginY {
+        get => this.NotApplicableError()
+        set => this.NotApplicableError()
+    }
+}
+
+class WebViewSizer extends Gui {
+    /**
+     * Helper class for adding sizing handles to a caption-free WebViewGui
+     */
+    static __New() {
+        OnMessage(0x0024, (Params*) => WebViewSizer.WM_GETMINMAXINFO(Params*))
+        OnMessage(0x0083, (Params*) => WebViewSizer.WM_NCCALCSIZE(Params*))
+        OnMessage(0x00A1, (Params*) => WebViewSizer.WM_NCLBUTTONDOWN(Params*))
+        OnMessage(0x007D, (Params*) => WebViewSizer.WM_STYLECHANGED(Params*))
+    }
+
+    /** Tests if the cursor intersects with the sizing handles */
+    static HitTest(lParam, Hwnd, &X?, &Y?) {
+        static BorderSize := 29
+        X := lParam << 48 >> 48, Y := lParam << 32 >> 48
+        WinGetPos &gX, &gY, &gW, &gH, Hwnd
+        Hit := (X < gX + BorderSize && 1) + (X >= gX + gW - BorderSize && 2)
+            + (Y < gY + BorderSize && 3) + (Y >= gy + gH - BorderSize && 6)
+        return Hit ? Hit + 9 : ""
+    }
+
+    /**
+     * Ensures the borderless window does not turn into a borderless
+     * fullscreen window
+     */
+    static WM_GETMINMAXINFO(wParam, lParam, Msg, Hwnd) {
+        if (!((CurrGui := GuiFromHwnd(Hwnd)) is WebViewGui) || (WinGetStyle(Hwnd) & 0x00800000)) {
+            return
+        }
+
+        if (ParentHwnd := DllCall("GetParent", "Int", CurrGui.Hwnd)) {
+            ;If window has a parent, use it's parent's size
+            WinGetPos(,, &ParentWidth, &ParentHeight, ParentHwnd)
+            MaximizedXPos := 0, MaximizedYPos := 0, MaximizedWidth := ParentWidth, MaximizedHeight := ParentHeight
+        } else {
+            ;If window does not have a parent, use it's monitor's size
+            MonitorInfo := Buffer(40), NumPut("UInt", MonitorInfo.Size, MonitorInfo)
+            hMonitor := DllCall("MonitorFromWindow", "UInt", Hwnd, "UInt", Mode := 2)
+            DllCall("GetMonitorInfo", "Ptr", hMonitor, "Ptr", MonitorInfo)
+            MonitorLeft := NumGet(MonitorInfo, 4, "Int"), MonitorTop := NumGet(MonitorInfo, 8, "Int")
+            MonitorRight := NumGet(MonitorInfo, 12, "Int"), MonitorBottom := NumGet(MonitorInfo, 16, "Int")
+            MonitorWorkLeft := NumGet(MonitorInfo, 20, "Int"), MonitorWorkTop := NumGet(MonitorInfo, 24, "Int")
+            MonitorWorkRight := NumGet(MonitorInfo, 28, "Int"), MonitorWorkBottom := NumGet(MonitorInfo, 32, "Int")
+            MaximizedWidth := MonitorWorkRight - MonitorLeft, MaximizedHeight := MonitorWorkBottom - MonitorTop
+            MaximizedXPos := MonitorWorkLeft - MonitorLeft, MaximizedYPos := MonitorWorkTop - MonitorTop
+        }
+
+        NumPut(
+            "Int", MaximizedWidth,  ; Maximized Width
+            "Int", MaximizedHeight, ; Maximized Height
+            "Int", MaximizedXPos,   ; Maximized xPos
+            "Int", MaximizedYPos,   ; Maximized yPos
+            lParam, 8
+        )
+        return
+    }
+
+    /** Redirects sizing area clicks to sizer's associated parent GUI */
+    static WM_NCLBUTTONDOWN(wParam, lParam, Msg, Hwnd) {
+        if (!(GuiFromHwnd(Hwnd) is WebViewSizer)) {
+            return
+        }
+
+        if (Hit := this.HitTest(lParam, Parent := DllCall("GetParent", "Ptr", Hwnd, "Ptr"), &X, &Y)) {
+            Buf := Buffer(4), NumPut("Short", X, "Short", Y, Buf)
+            PostMessage(0x00A1, Hit, Buf, Parent)
+            return 0
+        }
+    }
+
+    /** Hides or shows sizers in sync with parent GUI style */
+    static WM_STYLECHANGED(wParam, lParam, Msg, Hwnd) {
+        if (!((CurrGui := GuiFromHwnd(Hwnd)) is WebViewGui)) {
+            return
+        }
+
+        WebViewSizer.ToggleSizer(CurrGui)
+    }
+
+    /**
+     * Checks the Parent GUI for WM_SIZEBOX and WM_BORDER styles
+     * and toggles the Parent's Sizers' visibility as needed.
+     *
+     * @param Parent Parent GUI of a intialized Sizer
+     */
+    static ToggleSizer(Parent) {
+        if (!(Parent is WebViewGui)) {
+            return
+        }
+
+        if (((Style := WinGetStyle(Parent)) & 0x00040000) && !(Style & 0x00800000)) {
+            Parent.Sizers.Show()
+        } else {
+            Parent.Sizers.Hide()
+        }
+    }
+
+    /**
+     * When a GUI has -Caption and +Resize, it normally shows a wonky looking
+     * default sizing border. This handler recalculates the window size to
+     * render the client area over top of where that sizing border would
+     * normally be, so that it is hidden.
+     */
+    static WM_NCCALCSIZE(wParam, lParam, Msg, Hwnd) {
+        if (!((CurrGui := GuiFromHwnd(Hwnd)) is WebViewGui) || (WinGetStyle(Hwnd) & 0x00800000)) {
+            return
+        }
+
+        return 0
+    }
+
+    __New(p*) {
+        super.__New(p*)
+    }
+
+    __Delete() {
+        ; Placeholder
+    }
+
+    Move(X, Y, Width, Height) {
+        ; Adjust the sizing handles to fit the GUI, first punching a big hole
+        ; in the center for click-through, then resizing it to fit the GUI.
+        hRgn1 := DllCall("CreateRectRgn", "Int", 0, "Int", 0, "Int", Width, "Int", Height, "Ptr")
+        hRgn2 := DllCall("CreateRectRgn", "Int", 6, "Int", 6, "Int", Width - 6, "Int", Height - 6, "Ptr")
+        DllCall("CombineRgn", "Ptr", hRgn1, "Ptr", hRgn1, "Ptr", hRgn2, "Int", RGN_DIFF := 4)
+        DllCall("SetWindowRgn", "Ptr", this.Hwnd, "Ptr", hRgn1, "Int", true)
+
+        DllCall("SetWindowPos",
+            "Ptr", this.Hwnd, "Ptr", 0,
+            "Int", 0, "Int", 0, "Int", Width, "Int", Height,
+            "UInt", 0x4210 ; SWP_ASYNCWINDOWPOS | SWP_NOACTIVATE | SWP_NOOWNERZORDER
+        )
+    }
+}
+
+class WebViewCtrl extends Gui.Custom {
+    /**
+     * Creates a WebControl instance around a Gui.Custom control
+     * @param Target The Gui you want to attach the control to
+     * @param {String} Options Control options such as width, height, vName
+     * @param {Object} WebViewSettings May contain a CreatedEnvironment, DataDir, EdgeRuntime, Options, or DllPath
+     * @returns {WebViewCtrl}
+     */
+    static Call(Target, Options := "", WebViewSettings := {}) {
+        Container := Gui.Prototype.AddCustom.Call(Target, "ClassStatic " Options)
+        for Prop in this.Prototype.OwnProps() {
+            Container.DefineProp(Prop, this.Prototype.GetOwnPropDesc(Prop))
+        }
+        Container.__Init(), Container.__New(WebViewSettings?)
+        return Container
+    }
+
+    static __New() {
+        OnExit((*) => WebViewCtrl.CloseAllWebViewCtrls())
+    }
+
+    static Template := {}
+    static Template.Framework := "
+    (
+        <!DOCTYPE html>
+        <html>
+            <head>
+                <meta http-equiv="X-UA-Compatible" content="IE=edge">
+                <style>{2}</style>
+            </head>
+
+            <body>
+                <div class="main">{1}</div>
+                <script>{3}</script>
+            </body>
+        </html>
+    )"
+
+    static Template.Css := "html, body {width: 100%; height: 100%;margin: 0; padding: 0;font-family: sans-serif;} body {display: flex;flex-direction: column;} .main {flex-grow: 1;overflow: hidden;}"
+    static Template.Name := "Template.html"
+    static Template.Html := "<div style='padding:100px;'>The documentation for <b>WebViewToo</b> is currently being reworked. Sorry for the inconvenience.</div>"
+    static Template.JavaScript := ""
+
+    static UniqueId => WebViewCtrl.CreateUniqueID()
+    static CreateUniqueId() {
+        SplitPath(A_ScriptName,,,, &OutNameNoExt)
+        Loop Parse, OutNameNoExt {
+            Id .= Mod(A_Index, 3) ? Format("{:X}", Ord(A_LoopField)) : "-" Format("{:X}", Ord(A_LoopField))
+        }
+        return RTrim(StrLower(Id), "-")
+    }
+    static TempDir := A_Temp "\" WebViewCtrl.UniqueId
+
+    static ActiveHwnds := Map()
+
+    __New(WebViewSettings?) {
+        DllPath := WebViewSettings.HasProp("DllPath") ? WebViewSettings.DllPath : "WebView2Loader.dll"
+        DataDir := WebViewSettings.HasProp("DataDir") ? WebViewSettings.DataDir : ""
+        Options := WebViewSettings.HasProp("Options") ? WebViewSettings.Options : 0
+        EdgeRuntime := WebViewSettings.HasProp("EdgeRuntime") ? WebViewSettings.EdgeRuntime : ""
+        CreatedEnvironment := WebViewSettings.HasProp("CreatedEnvironment") ? WebViewSettings.CreatedEnvironment : 0
+        Html := WebViewSettings.HasProp("Html") ? WebViewSettings.Html : WebViewCtrl.Template.Html
+        Css := WebViewSettings.HasProp("Css") ? WebViewSettings.Css : WebViewCtrl.Template.Css
+        JavaScript := WebViewSettings.HasProp("JavaScript") ? WebViewSettings.JavaScript : WebViewCtrl.Template.JavaScript
+        Url := WebViewSettings.HasProp("Url") ? WebViewSettings.Url : ""
+
+        this.wvc := WebView2.Create(this.Hwnd,, CreatedEnvironment, DataDir, EdgeRuntime, Options, DllPath)
+        this.wv := this.wvc.CoreWebView2
+        WebViewCtrl.ActiveHwnds[this.Hwnd] := this.wvc
+        this.wv.InjectAhkComponent().await()
+        this.wvc.IsVisible := 1
+        if (A_IsCompiled) {
+            this.BrowseExe()
+        } else {
+            this.BrowseFolder(A_WorkingDir)
+        }
+
+        this.wv.add_NavigationStarting(InstallGlobal)
+        InstallGlobal(ICoreWebView2, Args) {
+            static Proxy := { __Get: (this, Name, *) => %Name% }
+            Host := WebViewCtrl.ParseUri(Args.Uri).Host
+            if (Host ~= "i)\.localhost$" || this._AllowGlobalHosts.Has(Host)) {
+                try ICoreWebView2.AddHostObjectToScript("global", Proxy)
+            } else {
+                try ICoreWebView2.RemoveHostObjectFromScript("global")
+            }
+        }
+
+        ; Add the request router
+        this.wv.add_WebResourceRequested (p*) => this._Router(p*)
+        if (Url) {
+            this.Navigate(Url)
+        } else {
+            this.NavigateToString(Format(WebViewCtrl.Template.Framework, Html, Css, JavaScript))
+        }
+        return this
+    }
+
+    ;This never seems to be called
+    __Delete() {
+        ; Placeholder
+    }
 
     ;-------------------------------------------------------------------------------------------
-    ;Inherited GUI Properties
-    hWnd => this.HasProp("gui") ? this.gui.hWnd : ""
+    ;Custom Uri Routing
 
-    MarginX {
-		get => this.gui.MarginX
-		set => this.gui.MarginX := Value
-	}
+    _DefaultHost := "ahk.localhost"
 
-    MarginY {
-		get => this.gui.MarginY
-		set => this.gui.MarginY := Value
-	}
+    /**
+     * Adds folder access into the WebView2 environment under the given host
+     * name. Host names provided here should end with `.localhost` for best
+     * performance.
+     *
+     * Folders added by this method cannot easily be used in compiled scripts.
+     *
+     * @param Path The path to the folder to add
+     * @param Host The host name to add the folder under, e.g. `ahk.localhost`
+     *
+     */
+    BrowseFolder(Path, Host := this._DefaultHost) {
+        this.wv.SetVirtualHostNameToFolderMapping(Host, NormalizePath(Path), WebView2.HOST_RESOURCE_ACCESS_KIND.ALLOW)
 
-    MenuBar {
-		get => this.gui.MenuBar
-		set => this.gui.MenuBar := Value
-	}
+        NormalizePath(Path) {
+            cc := DllCall("GetFullPathName", "str", Path, "uint", 0, "ptr", 0, "ptr", 0, "uint")
+            buf := Buffer(cc * 2)
+            DllCall("GetFullPathName", "str", path, "uint", cc, "ptr", buf, "ptr", 0)
+            return StrGet(buf)
+        }
+    }
 
-    Name {
-		get => this.gui.Name
-		set => this.gui.Name := Value
-	}
+    /**
+     * Adds exe resource access into the WebView2 environment under the given
+     * host name.
+     *
+     * @param {String} Path Path to the exe to load resources from
+     * @param {String} Host Host to make the resources available on
+     */
+    BrowseExe(Path?, Host := this._DefaultHost) {
+        if (IsSet(Path)) {
+            throw Error("Not yet supported")
+        }
 
-    Title {
-		get => this.gui.Title
-		set => this.gui.Title := Value
-	}
+        this._CompileRoutesForHost(Host, [['**', (Uri) => WebViewCtrl.ExeRead(Uri.Path)]])
+    }
 
-	;-------------------------------------------------------------------------------------------
-	;Controller class assignments
-	Fill() => this.wvc.Fill() ;Fills the available GUI space with the CoreWebView2Controller
-	CoreWebView2 => this.wvc.CoreWebView2 ;Gets the CoreWebView2 associated with this CoreWebView2Controller
-	IsVisible { ;Boolean => Determines whether to show or hide the WebView
-		get => this.wvc.IsVisible
-		set => this.wvc.IsVisible := Value
-	}
-	Bounds { ;Rectangle => Gets or sets the WebView bounds
-		get => this.wvc.Bounds
-		set => this.wvc.Bounds := Value
-	}
-	ZoomFactor { ;Double => Gets or sets the zoom factor for the WebView
-		get => this.wvc.ZoomFactor
-		set => this.wvc.ZoomFactor := Value
-	}
-	ParentWindow { ;Integer => Gets the parent window provided by the app or sets the parent window that this WebView is using to render content
-		get => this.wvc.ParentWindow 
-		set => this.wvc.ParentWindow := Value ;Not recommened to use set => because it dettaches the WebView2 window and can break the software
-	}
-	DefaultBackgroundColor { ;HexColorCode => Gets or sets the WebView default background color.
-		get => this.wvc.DefaultBackgroundColor
-		set => this.wvc.DefaultBackgroundColor := WebviewWindow.ConvertColor(Value)
-	}
-	static ConvertColor(BGRValue) { ;Converts provided HexColorCode from RGB to BGR for use with DefaultBackgroundColor
-		BGRValue := String(BGRValue)
-		if (IsXDigit(BGRValue)) && (!InStr(BGRValue, "0x")) {
-			BGRValue := "0x" BGRValue
-		}
-		BlueByte := (BGRValue & 0xFF0000) >> 16
-		GreenByte := BGRValue & 0x00FF00
-		RedByte := (BGRValue & 0x0000FF) << 16
-		return RedByte | GreenByte | BlueByte
-	}
+    /**
+     * Adds access to an individual file.
+     *
+     * @param {String} FilePath The path to load the file from
+     * @param {String} Route    The route to make the file available under, if
+     *                          different than the name of filePath.
+     * @param {String} Host     The host name to add the file under
+     */
+    AddFileRoute(FilePath, Route?, Host := this._DefaultHost) {
+        SplitPath(FilePath, &Name)
+        if (A_IsCompiled) {
+            this.AddRoute(Route ?? Name, (Uri) => WebViewCtrl.ExeRead(FilePath))
+        } else {
+            this.AddRoute(Route ?? Name, (Uri) => FileRead(FilePath, "RAW"))
+        }
+    }
 
-	/**
-	 * RasterizationScale, ShouldDetectMonitorScaleChanges, and BoundsMode all work together
-	 * If you want to use set => (RasterizationScale||ShouldDetectMonitorScaleChanges||BoundsMode)
-	 * you will need to turn on DPI Awareness for your script by using the following DllCall
-	 * DllCall("SetThreadDpiAwarenessContext", "ptr", -3, "ptr")
-	**/
-	RasterizationScale { ;Double => Gets or sets the WebView rasterization scale
-		get => this.wvc.RasterizationScale
-		set => this.wvc.RasterizationScale := Value
-	}
-	ShouldDetectMonitorScaleChanges { ;Boolean => Determines whether the WebView will detect monitor scale changes
-		get => this.wvc.ShouldDetectMonitorScaleChanges
-		set => this.wvc.ShouldDetectMonitorScaleChanges := Value
-	}
-	BoundsMode { ;Boolean => Gets or sets the WebView bounds mode
-		get => this.wvc.BoundsMode
-		set => this.wvc.BoundsMode := Value
-	}
-	AllowExternalDrop { ;Boolean => Gets or sets the WebView allow external drop property
-		get => this.wvc.AllowExternalDrop
-		set => this.wvc.AllowExternalDrop := Value
-	}
-	;NotifyParentWindowPositionChanged() => this.wvc.NotifyParentWindowPositionChanged() ;Seemingly Unused
-	SetBoundsAndZoomFactor(bounds, zoomFactor) => this.wvc.SetBoundsAndZoomFactor(bounds, zoomFactor) ;Updates Bounds and ZoomFactor properties at the same time
-	MoveFocus(reason) => this.wvc.MoveFocus(reason) ;Moves focus into WebView
+    /**
+     * Adds a text resource at the specified route
+     *
+     * @param {String} Route The route to make the resource available under
+     * @param {String} Text  The text content for the resource
+     * @param {String} Host  The host name to add the file under
+     */
+    AddTextRoute(Route, Text, Host := this._DefaultHost) {
+        this.AddRoute(Route, Text, Host)
+    }
 
-	;-------------------------------------------------------------------------------------------
-	;WebView2Core class assignments
-	AddAHKObjHelper() => this.wv.AddAHKObjHelper()
-	Settings => this.wv.Settings ;Returns Map() of Settings
-		AreBrowserAcceleratorKeysEnabled { ;Boolean => Determines whether browser-specific accelerator keys are enabled
-			get => this.Settings.AreBrowserAcceleratorKeysEnabled
-			set =>  this.Settings.AreBrowserAcceleratorKeysEnabled := Value
-		}
-		AreDefaultContextMenusEnabled { ;Boolean => Determines whether the default context menus are shown to the user in WebView
-			get => this.Settings.AreDefaultContextMenusEnabled
-			set => this.Settings.AreDefaultContextMenusEnabled := Value
-		}
-		AreDefaultScriptDialogsEnabled { ;Boolean => Determines whether WebView renders the default JavaScript dialog box
-			get => this.Settings.AreDefaultScriptDialogsEnabled
-			set => this.Settings.AreDefaultScriptDialogsEnabled := Value
-		}
-		AreDevToolsEnabled { ;Boolean => Determines whether the user is able to use the context menu or keyboard shortcuts to open the DevTools window
-			get => this.Settings.AreDevToolsEnabled
-			set => this.Settings.AreDevToolsEnabled := Value
-		}
-		AreHostObjectsAllowed { ;Boolean => Determines whether host objects are accessible from the page in WebView
-			get => this.Settings.AreHostObjectsAllowed
-			set => this.Settings.AreHostObjectsAllowed := Value
-		}
-		HiddenPdfToolbarItems { ;Integer => Used to customize the PDF toolbar items
-			/** 
-			 * Bookmarks: 256
-			 * FitPage: 64
-			 * FullScreen: 2048
-			 * MoreSettings: 4096
-			 * None: 0
-			 * PageLayout: 128
-			 * PageSelector: 512
-			 * Print: 2
-			 * Rotate: 32
-			 * Save: 1
-			 * SaveAs: 4
-			 * Search: 1024
-			 * ZoomIn: 8
-			 * ZoomOut: 16
-			 * Add up numbers if you want to hide multiple items, Ex: 257 to hide Bookmarks and Save
-			**/
-			get => this.Settings.HiddenPdfToolbarItems
-			set => this.Settings.HiddenPdfToolbarItems := Value
-		}
-		IsBuiltInErrorPageEnabled { ;Boolean => Determines whether to disable built in error page for navigation failure and render process failure
-			get => this.Settings.IsBuiltInErrorPageEnabled
-			set => this.Settings.IsBuiltInErrorPageEnabled := Value
-		}
-		IsGeneralAutofillEnabled { ;Boolean => Determines whether general form information will be saved and autofilled
-			get => this.Settings.IsGeneralAutofillEnabled
-			set => this.Settings.IsGeneralAutofillEnabled := Value
-		}
-		IsPasswordAutosaveEnabled { ;Boolean => Determines whether password information will be autosaved
-			get => this.Settings.IsPasswordAutosaveEnabled
-			set => this.Settings.IsPasswordAutosaveEnabled := Value
-		}
-		IsPinchZoomEnabled { ;Boolean => Determines the ability of the end users to use pinching motions on touch input enabled devices to scale the web content in the WebView2
-			get => this.Settings.IsPinchZoomEnabled
-			set => this.Settings.IsPinchZoomEnabled := Value
-		}
-		IsReputationCheckingRequired { ;Boolean => Determines whether SmartScreen is enabled when visiting web pages
-			get => this.Settings.IsReputationCheckingRequired
-			set => this.Settings.IsReputationCheckingRequired := Value
-		}
-		IsScriptEnabled { ;Boolean => Determines whether running JavaScript is enabled in all future navigations in the WebView
-			get => this.Settings.IsScriptEnabled
-			set => this.Settings.IsScriptEnabled := Value
-		}
-		IsStatusBarEnabled { ;Boolean => Determines whether the status bar is displayed
-			get => this.Settings.IsStatusBarEnabled
-			set => this.Settings.IsStatusBarEnabled := Value
-		}
-		IsSwipeNavigationEnabled { ;Boolean => Determines whether the end user to use swiping gesture on touch input enabled devices to navigate in WebView2
-			get => this.Settings.IsSwipeNavigationEnabled
-			set => this.Settings.IsSwipeNavigationEnabled := Value
-		}
-		IsWebMessageEnabled { ;Boolean => Determines whether communication from the host to the top-level HTML document of the WebView is allowed
-			get => this.Settings.IsWebMessageEnabled
-			set => this.Settings.IsWebMessageEnabled := Value
-		}
-		IsZoomControlEnabled { ;Boolean => Determines whether the user is able to impact the zoom of the WebView
-			get => this.Settings.IsZoomControlEnabled
-			set => this.Settings.IsZoomControlEnabled := Value
-		}
-		UserAgent { ;String => Determines WebView2's User Agent
-			get => this.Settings.UserAgent
-			set => this.Settings.UserAgent := Value
-		}
+    /**
+     * Adds a resource at the specified route
+     *
+     * @param {String} Route    The route to make the resource available under
+     * @param          Resource The resource to make available
+     * @param {String} Host     The host name to add the resource under
+     */
+    AddRoute(Route, Resource, Host := this._DefaultHost) {
+        this._Routes[Host].Dirty := true
+        this._Routes[Host].InsertAt(1, [Route, Resource])
+        if (!this._Routes.Dirty) {
+            this._Routes.Dirty := true
+            SetTimer(() => this._SaveUnsavedRoutes(), -1)
+        }
+    }
 
-	Source => this.wv.Source ;Returns Uri of current page
-	Navigate(uri) => this.wv.Navigate(uri) ;Navigate to new Uri
-	NavigateToString(htmlContent) => this.wv.NavigateToString(htmlContent) ;Navigate to text (essentially create a webpage from a string)
-	ExecuteScript(script, callback := 0) => this.wv.ExecuteScript(script, callback) ;Execute code on the current Webpage
-	CapturePreview(imageFormat, imageStream, handler) => this.wv.CapturePreview(imageFormat, imageStream, handler) ;Take a "screenshot" of the current WebView2 content
-	Reload() => this.wv.Reload() ;Reloads the current page
-	PostWebMessageAsJson(webMessageAsJson) => this.wv.PostWebMessageAsJson(webMessageAsJson) ;Posts the specified JSON message to the top level document in this WebView
-	PostWebMessageAsString(webMessageAsString) => this.wv.PostWebMessageAsString(webMessageAsString) ;Posts the specified STRING message to the top level document in this WebView
-		/**
-		 * In order to use PostWebMessageAsJson() or PostWebMessageAsString(), you'll need to setup your webpage to listen to messages
-		 * First, MyWindow.Settings.IsWebMessageEnabled must be set to true
-		 * On your webpage itself, you'll need to setup an EventListner and Handler for the WebMessages
-		 * 		window.chrome.webview.addEventListener('message', ahkWebMessage);
-		 * 		function ahkWebMessage(Msg) {
-		 * 			console.log(Msg);
-		 * 		}
-		**/
+    /**
+     * Allow pages at the given host to access the `ahk.global` object.
+     * @param Host The host name to allow access under
+     */
+    AllowGlobalAccessFor(Host := this._DefaultHost) {
+        this._AllowGlobalHosts[Host] := true
+        ; TODO: Make change on any active page
+    }
 
-	CallDevToolsProtocolMethod(methodName, parametersAsJson, handler) => this.wvc.CallDevToolsProtocolMethod(methodName, parametersAsJson, handler) ;Runs an DevToolsProtocol method
-	BrowserProcessId => this.wv.BrowserProcessId ;Returns the process ID of the browser process that hosts the WebView2
-	CanGoBack => this.wv.CanGoBack ;Returns true if the WebView is able to navigate to a previous page in the navigation history
-	CanGoForward => this.wv.CanGoForward ;Returns true if the WebView is able to navigate to a next page in the navigation history
-	GoBack() => this.wv.GoBack() ;GoBack to the previous page in the navigation history
-	GoForward() => this.wv.GoForward() ;GoForward to the next page in the navigation history
-	GetDevToolsProtocolEventReceiver(eventName) => this.wv.GetDevToolsProtocolEventReceiver(eventName) ;Gets a DevTools Protocol event receiver that allows you to subscribe to a DevToolsProtocol event
-	Stop() => this.wv.Stop() ;Stops all navigations and pending resource fetches
-	DocumentTitle => this.wv.DocumentTitle ;Returns the DocumentTitle of the current webpage
-	AddHostObjectToScript(objName, Obj) => this.wv.AddHostObjectToScript(objName, Obj) ;Create object link between the WebView2 and the AHK Script
-	RemoveHostObjectFromScript(objName) => this.wv.RemoveHostObjectFromScript(objName) ;Delete object link from the WebView2
-	OpenDevToolsWindow() => this.wv.OpenDevToolsWindow() ;Opens DevTools for the current WebView2
-	ContainsFullScreenElement => this.wv.ContainsFullScreenElement ;Returns true if the WebView contains a fullscreen HTML element
-	AddWebResourceRequestedFilter(uri, resourceContext) => this.wv.AddWebResourceRequestedFilter(uri, resourceContext) ;Adds a URI and resource context filter for the WebResourceRequested event
-	RemoveWebResourceRequestedFilter(uri, resourceContext) => this.wv.RemoveWebResourceRequestedFilter(uri, resourceContext) ;Removes a matching WebResource filter that was previously added for the WebResourceRequested event
-	NavigateWithWebResourceRequest(request) => this.wv.NavigateWithWebResourceRequest(request) ;Navigates using a constructed CoreWebView2WebResourceRequest object
-	CookieManager => this.wv.CookieManager ;Gets the CoreWebView2CookieManager object associated with this CoreWebView2
-		GetCookies(uri, handler) => this.CookieManager.GetCookies(uri, handler) ;Gets a list of cookies matching the specific URI
-		/**
-		 * You have to create a handler to be able to pass to the Method
-		 * GetCookiesHandlerFunc := WebView2.Handler(GetCookiesHandler)
-		 * 
-		 * Then you have to define the handler itself
-		 * GetCookiesHandler(Msg) {}
-		 * 
-		 * Finally you can call the Method
-		 * MyWindow.GetCookies("https://google.com", GetCookiesHandlerFunc)
-		**/
+    /**
+     * Shows a specified resource in the web view
+     *
+     * @param Path The path to the resource, not including any leading slash
+     */
+    Navigate(Path) {
+        this._SaveUnsavedRoutes()
+        if (!(Path ~= "i)^[^\/\\:]+:")) {
+            Path := "https://" this._DefaultHost "/" LTrim(Path, "/\")
+        }
+        this.wv.Navigate(Path)
+    }
 
-	Environment => this.wv.Environment ;Returns Map() of Environment settings
-		BrowserVersionString => this.Environment.BrowserVersionString ;Returns the browser version info of the current CoreWebView2Environment, including channel name if it is not the stable channel
-		FailureReportFolderPath => this.Environment.FailureReportFolderPath ;Returns the failure report folder that all CoreWebView2s created from this environment are using
-		UserDataFolder => this.Environment.UserDataFolder ;Returns the user data folder that all CoreWebView2s created from this environment are using
-		CreateWebResourceRequest(uri, method, postData, headers) => this.Environment.CreateWebResourceRequest(uri, method, postData, headers) ;Creates a new CoreWebView2WebResourceRequest object
-		CreateCoreWebView2CompositionController(parentWindow, handler) => this.Environment.CreateCoreWebView2CompositionController(parentWindow, handler) ;Creates a new WebView for use with visual hosting
-		CreateCoreWebView2PointerInfo() => this.Environment.CreateCoreWebView2PointerInfo() ;Returns Map() of a combined win32 POINTER_INFO, POINTER_TOUCH_INFO, and POINTER_PEN_INFO object
-		GetAutomationProviderForWindow(hwnd) => this.Environment.GetAutomationProviderForWindow(hwnd) ;PRODUCES ERROR, REACH OUT TO THQBY
-		CreatePrintSettings() => this.Environment.CreatePrintSettings() ;Creates the CoreWebView2PrintSettings used by the PrintToPdfAsync(String, CoreWebView2PrintSettings) method
-		GetProcessInfos() => this.Environment.GetProcessInfos() ;Returns the list of all CoreWebView2ProcessInfo using same user data folder except for crashpad process
-		CreateContextMenuItem(label, iconStream, kind) => this.Environment.CreateContextMenuItem(label, iconStream, kind) ;PRODUCES ERROR, REACH OUT TO THQBY
-		CreateCoreWebView2ControllerOptions() => this.Environment.CreateCoreWebView2ControllerOptions() ;PRODUCES ERROR, REACH OUT TO THQBY
-		CreateCoreWebView2ControllerWithOptions(parentWindow, options, handler) => this.Environment.CreateCoreWebView2ControllerWithOptions(parentWindow, options, handler) ;PRODUCES ERROR, REACH OUT TO THQBY -- I think the issue is part of the `CreateCoreWEbView2ControllerOptions()` method
-		CreateCoreWebView2CompositionControllerWithOptions(parentWindow, options, handler) => this.Environment.CreateCoreWebView2CompositionControllerWithOptions(parentWindow, options, handler) ;;PRODUCES ERROR, REACH OUT TO THQBY -- I think the issue is part of the `CreateCoreWEbView2ControllerOptions()` method
-		CreateSharedBuffer(size) => this.Environment.CreateSharedBuffer(size) ;Create a shared memory based buffer with the specified size in bytes -- PRODUCES ERROR, REACH OUT TO THQBY
+    /** List of hosts allowed to access names in AHK's global scope */
+    _AllowGlobalHosts := Map()
 
-	Resume() => this.wv.Resume() ;Resumes the WebView so that it resumes activities on the web page
-	IsSuspended => this.wv.IsSuspended ;Returns true if the WebView is suspended
-	SetVirtualHostNameToFolderMapping(hostName, folderPath, accessKind) => this.wv.SetVirtualHostNameToFolderMapping(hostName, folderPath, accessKind) ;Sets a mapping between a virtual host name and a folder path to make available to web sites via that host name
-	ClearVirtualHostNameToFolderMapping(hostName) => this.wv.ClearVirtualHostNameToFolderMapping(hostName) ;Clears a host name mapping for local folder that was added by SetVirtualHostNameToFolderMapping()
-	OpenTaskManagerWindow() => this.wv.OpenTaskManagerWindow() ;Opens the Browser Task Manager view as a new window in the foreground
-	IsMuted { ;Indicates whether all audio output from this CoreWebView2 is muted or not. Set to true will mute this CoreWebView2, and set to false will unmute this CoreWebView2. true if audio is muted
-		get => this.wv.IsMuted
-		set => this.wv.IsMuted := Value
-	}
-	IsDocumentPlayingAudio => this.wv.IsDocumentPlayingAudio ;Returns true if audio is playing even if IsMuted is true
-	IsDefaultDownloadDialogOpen => this.wv.IsDefaultDownloadDialogOpen ;Returns true if the default download dialog is currently open
-	OpenDefaultDownloadDialog() => this.wv.OpenDefaultDownloadDialog() ;Opens the DownloadDialog Popup Window
-	CloseDefaultDownloadDialog() => this.wv.CloseDefaultDownloadDialog() ;Closes the DownloadDialog Popup Window
-	DefaultDownloadDialogCornerAlignment { ;Position of DownloadDialog does not update until after the WebView2 position or size has changed
-		get => this.wv.DefaultDownloadDialogCornerAlignment ;Return the current corner the DownloadDialog will show up in (0 := TopLeft, 1 := TopRight, 2 := BottomLeft, 3 := BottomRight)
-		set => this.wv.DefaultDownloadDialogCornerAlignment := Value ;Set the corner of the WebView2 that the DownloadDialog will show up in (0 := TopLeft, 1 := TopRight, 2 := BottomLeft, 3 := BottomRight)
-	}
-	DefaultDownloadDialogMargin { ;Working, but I don't know how to accurately assign a new Margin yet. We can assign one via an Integer, but it's hit and miss to get the position correct
-		get => this.wv.DefaultDownloadDialogMargin
-		set => this.wv.DefaultDownloadDialogMargin := Value
-	}
-	CallDevToolsProtocolMethodForSession(sessionId, methodName, parametersAsJson, handler) => this.wv.CallDevToolsProtocolMethodForSession(sessionId, methodName, parametersAsJson, handler) ;Runs a DevToolsProtocol method for a specific session of an attached target
-	StatusBarText => this.wv.StatusBarText ;Returns the current text of the WebView2 StatusBar
-	Profile => this.wv.Profile ;Returns the associated CoreWebView2Profile object of CoreWebView2
-	FaviconUri => this.wv.FaviconUri ;Returns the Uri as a string of the current Favicon. This will be an empty string if the page does not have a Favicon
-	GetFavicon(format, completedHandler) => this.wv.GetFavicon(format, completedHandler) ;Get the downloaded Favicon image for the current page and copy it to the image stream
-	
-	Print(printSettings, handler) => this.wv.Print(printSettings, handler) ;Print the current web page asynchronously to the specified printer with the provided settings
-		/**
-		 * You have to create a handler to be able to pass to the Method
-		 * PrintHandlerFunc := WebView2.Handler(PrintHandler)
-		 * PrintHandler(Msg) {}
-		 * printSettings := MyWindow.CreatePrintSettings()
-		 * printSettings.PrinterName := "HP Color LaserJet MFP M477fdn" ;this needs to match what you see in your 'Printers and Scanners' window
-		 * MyWindow.Print(printSettings, PrintHandlerFunc)
-		**/
-	PrintToPdf(resultFilePath, printSettings, handler) => this.wv.PrintToPdf(resultFilePath, printSettings, handler) ;Print the current page to PDF with the provided settings
-	ShowPrintUI(printDialogKind) => this.wv.ShowPrintUI(printDialogKind) ;Opens the print dialog to print the current web page. Browser printDialogKind := 0, System printDialogKind := 1
-	PrintToPdfStream(printSettings, handler) => this.wv.PrintToPdfStream(printSettings, handler) ;Provides the PDF data of current web page for the provided settings to a Stream
-	PostSharedBufferToScript(sharedBuffer, access, additionalDataAsJson) => this.wv.PostSharedBufferToScript(sharedBuffer, access, additionalDataAsJson) ;Share a shared buffer object with script of the main frame in the WebView
-	MemoryUsageTargetLevel { ;0 = Normal, 1 = Low; Low can be used for apps that are inactive to conserve memory usage
-		get => this.wv.MemoryUsageTargetLevel
-		set => this.wv.MemoryUsageTargetLevel := Value
-	}
+    /** Map of hosts to route lists */
+    _Routes := WebViewCtrl._RouteMap()
+    class _RouteMap extends Map {
+        Dirty := false ; Has not been compiled since last change
+        __Item[Name] => (
+            this.Has(Name) || this.Set(Name, WebViewCtrl._RouteList()),
+            this.Get(Name)
+        )
+    }
 
-	;-------------------------------------------------------------------------------------------
-	;Handler Assignments
-	static PlaceholderHandler(handler, ICoreWebView2, args) {
-		MsgBox(handler, "PlaceholderHandler")
-	}
+    /**
+     * Contains a list of route objects. Route objects are a two-element array
+     * pairing a route string and a resource.
+     */
+    class _RouteList extends Array {
+        Dirty := false ; Has not been compiled since last change
+    }
 
-	;Controller
-	ZoomFactorChanged(handler) => this.ZoomFactorChangedHandler := this.wv.ZoomFactorChanged(handler)
-	MoveFocusRequested(handler) => this.MoveFocusRequestedHandler := this.wv.MoveFocusRequested(handler)
-	GotFocus(handler) => this.GotFocusHandler := this.wvc.GotFocus(handler)
-	LostFocus(handler) => this.LostFocusHandler := this.wv.LostFocus(handler)
-	AcceleratorKeyPressed(handler) => this.AcceleratorKeyPressedHandler := this.wv.AcceleratorKeyPressed(handler)
-	RasterizationScaleChanged(handler) => this.RasterizationScaleChangedHandler := this.wv.RasterizationScaleChanged(handler)
+    /** Map of hosts to compiled regular expressions */
+    _CompiledRoutes := Map()
 
-	;Core
-	NavigationStarting(handler) => this.NavigationStartingHandler := this.wv.NavigationStarting(handler)
-	ContentLoading(handler) => this.ContentLoadingHandler := this.wv.ContentLoading(handler)
-	SourceChanged(handler) => this.SourceChangedHandler := this.wv.SourceChanged(handler)
-	HistoryChanged(handler) => this.HistoryChangedHandler := this.wv.HistoryChanged(handler)
-	NavigationCompleted(handler) => this.NavigationCompletedHandler := this.wv.NavigationCompleted(handler)
-	ScriptDialogOpening(handler) => this.ScriptDialogOpeningHandler := this.wv.ScriptDialogOpening(handler)
-	PermissionRequested(handler) => this.PermissionRequestedHandler := this.wv.PermissionRequested(handler)
-	ProcessFailed(handler) => this.ProcessFailedHandler := this.wv.ProcessFailed(handler)
-	WebMessageReceived(handler) => this.WebMessageReceivedHandler := this.wv.WebMessageReceived(handler)
-	NewWindowRequested(handler) => this.NewWindowRequestedHandler := this.wv.NewWindowRequested(handler)
-	DocumentTitleChanged(handler) => this.DocumentTitleChangedRequested := this.wv.DocumentTitleChanged(handler)
-	ContainsFullScreenElementChanged(handler) => this.ContainsFullScreenElementChangedHandler := this.wv.ContainsFullScreenElementChanged(handler)
-	WebResourceRequested(handler) => this.WebResourceRequestedHandler := this.wv.WebResourceRequested(handler)
-	WindowCloseRequested(handler) => this.WindowCloseRequestedHandler := this.wv.WindowCloseRequested(handler)
-	WebResourceResponseReceived(handler) => this.WebResourceResponseReceivedHandler := this.wv.WebResourceResponseReceived(handler)
-	DOMContentLoaded(handler) => this.DOMContentLoadedHandler := this.wv.DOMContentLoaded(handler)
-	TrySuspend(handler) => this.TrySuspendHandler := WebView2.Handler(handler)
-	FrameCreated(handler) => this.FrameCreatedHandler := this.wv.FrameCreated(handler)
-	DownloadStarting(handler) => this.DownloadStartingHandler := this.wv.DownloadStarting(handler)
-	ClientCertificateRequested(handler) => this.ClientCertificateRequestedHandler := this.wv.ClientCertificateRequested(handler)
-	IsMutedChanged(handler) => this.IsMutedChangedHandler := this.wv.IsMutedChanged(handler)
-	IsDocumentPlayingAudioChanged(handler) => this.IsDocumentPlayingAudioChangedHandler := this.wv.IsDocumentPlayingAudioChanged(handler)
-	IsDefaultDownloadDialogOpenChanged(handler) => this.IsDefaultDownloadDialogOpenChangedHandler := this.wv.IsDefaultDownloadDialogOpenChanged(handler)
-	BasicAuthenticationRequested(handler) => this.BasicAuthenticationRequestedHandler := this.wv.BasicAuthenticationRequested(handler)
-	ContextMenuRequested(handler) => this.ContextMenuRequestedHandler := this.wv.ContextMenuRequested(handler)
-	StatusBarTextChanged(handler) => this.StatusBarTextChangedHandler := this.wv.StatusBarTextChanged(handler)
-	ServerCertificateErrorDetected(handler) => this.ServerCertificateErrorDetectedHandler := this.wv.ServerCertificateErrorDetected(handler)
-	ClearServerCertificateErrorActions(handler) => this.ClearServerCertificateErrorActionsHandler := WebView2.Handler(handler)
-	FaviconChanged(handler) => this.FaviconChangedHandler := this.wv.FaviconChanged(handler)
-	LaunchingExternalUriScheme(handler) => this.LaunchingExternalUriSchemeHandler := this.wv.LaunchingExternalUriScheme(handler)
+    /**
+     * Compiles any routes that have been changed since the last time they
+     * were compiled
+     */
+    _SaveUnsavedRoutes() {
+        if (!this._Routes.Dirty) {
+            return
+        }
 
-	;ExecuteScriptCompleted
-	ExecuteScriptCompleted(handler) => this.ExecuteScriptCompletedHandler := WebView2.Handler(handler)
+        this._Routes.Dirty := false
+        for Host, RouteList in this._Routes {
+            if (!RouteList.Dirty) {
+                continue
+            }
+            RouteList.Dirty := false
+            this._CompileRoutesForHost(Host, RouteList)
+        }
+    }
 
-	/**
-	 * The following event handlers are commented out for the time being.
-	 * Their assignments are not accurate and cannot be used directly,
-	 * I'm leaving them here for easy tracking of event handlers and
-	 * I may revisit fixing them in the future.  
-	**/
-	/*
-	;DownloadOperation
-	BytesReceivedChanged(handler) => this.BytesReceivedChangedHandler := this.do.BytesReceivedChanged(handler)
-	EstimatedEndTimeChanged(handler) => this.EstimatedEndTimeChangedHandler := WebView2.Handler(handler)
-	StateChanged(handler) => this.StateChangedHandler := WebView2.Handler(handler)
+    /** Compiles the routes for a specified host */
+    _CompileRoutesForHost(Host, Routes) {
+        ; Clear any overriding folder mappings that would prevent custom routing
+        try this.wv.ClearVirtualHostNameToFolderMapping(Host)
 
-	;Environment
-	NewBrowserVersionAvailable(handler) => this.NewBrowserVersionAvailableHandler := this.wv.NewBrowserVersionAvailable(handler)
-	BrowserProcessExited(handler) => this.BrowserProcessExitedHandler := this.wv.BrowserProcessExited(handler)
-	ProcessInfosChanged(handler) => this.ProcessInfosChangedHandler := this.wv.ProcessInfosChanged(handler)
+        FullReg := ""
+        for Route in Routes {
+            Pattern := "^[\/\\]{0,}(\Q" StrReplace(Route[1], "\E", "\E\\E\Q") "\E)$(?C" A_Index ":Callout)"
+            Pattern := StrReplace(Pattern, "**", "\E.{0,}?\Q")
+            Pattern := StrReplace(Pattern, "*", "\E[^\/\\]{0,}?\Q")
+            FullReg .= "|" Pattern
+        }
 
-	;Frame
-	FrameNameChanged(handler) => this.FrameNameChangedHandler := this.wv.NameChanged(handler)
-	FrameDestroyed(handler) => this.FrameDestroyedHandler := this.wv.FrameDestroyed(handler)
-	FrameNavigationStarting(handler) => this.FrameNavigationStartingHandler := this.wv.FrameNavigationStarting(handler)
-	FrameNavigationCompleted(handler) => this.FrameNavigationCompletedHandler := this.wv.FrameNavigationCompleted(handler)
-	FrameContentLoading(handler) => this.FrameContentLoadingHandler := this.wv.FrameContentLoading(handler)
-	FrameDOMContentLoaded(handler) => this.FrameDOMContentLoadedHandler := this.wv.FrameDOMContentLoaded(handler)
-	FrameWebMessageReceived(handler) => this.FrameWebMessageReceivedHandler := this.wv.FrameWebMessageReceived(handler)
-	FramePermissionRequested(handler) => this.FramePermissionRequestedHandler := this.wv.FramePermissionRequested(handler)
+        this._CompiledRoutes[Host] := {Pattern: "S)" SubStr(fullReg, 2), Routes: Routes.Clone()}
 
-	;Profile
-	ClearBrowsingDataAll(handler) => this.ClearBrowsingDataAllHandler := this.wv.ClearBrowsingDataAll(handler)
+        ; Register the router to handle requests made against this domain
+        this.wv.AddWebResourceRequestedFilter("http://" Host "/*", 0)
+        this.wv.AddWebResourceRequestedFilter("https://" Host "/*", 0)
+    }
 
-	;CompositionController
-	CursorChanged(handler) => this.CursorChangedHandler := this.wv.CursorChanged(handler)
+    /** Connects requests to target resources */
+    _Router(ICoreWebView2, Args) {
+        Parsed := WebViewCtrl.ParseUri(Args.Request.Uri)
+        Path := Parsed.Path, Host := Parsed.host
 
-	;ContextMenuItem
-	CustomItemSelected(handler) => this.CustomItemSelectedHandler := this.wv.CustomItemSelected(handler)
+        Target := unset
+        CompiledRoutes := this._CompiledRoutes[Host]
+        RegExMatch(Path, CompiledRoutes.Pattern)
+        if (!IsSet(Target)) {
+            return
+        }
 
-	;DevToolsProtocolEventReceiver
-	DevToolsProtocolEventReceived(handler) => this.DevToolsProtocolEventReceivedHandler := this.wv.DevToolsProtocolEventReceived(handler)
+        if (Target is Object && !(Target is Buffer)) {
+            try Target := Target(Parsed)
+        }
 
-	;WebResourceResponseView
-	GetContent(handler) => this.GetContentHandler := this.wv.GetContent(handler)
-	*/
+        if (Target is Buffer) {
+            Stream := WebView2.CreateMemStream(Target)
+            Args.Response := ICoreWebView2.Environment.CreateWebResourceResponse(Stream, 200, "OK", "")
+            return
+        }
+
+        if (Target is String) {
+            Headers := ""
+            if (Path ~= "i)\.js$") {
+                Headers .= "Content-Type: text/javascript;"
+            }
+            Stream := WebView2.CreateTextStream(Target)
+            Args.Response := ICoreWebView2.Environment.CreateWebResourceResponse(Stream, 200, "OK", Headers)
+            return
+        }
+
+        if (Target is WebView2.Stream) {
+            Args.Response := ICoreWebView2.Environment.CreateWebResourceResponse(Target, 200, "OK", "")
+            return
+        }
+
+        Callout(Match, Num, Pos, Haystack, Needle) {
+            Target := CompiledRoutes.Routes[Num][2]
+            return -1
+        }
+    }
+
+    ;-------------------------------------------------------------------------------------------
+    ;Static WebViewCtrl Methods
+    static CloseAllWebViewCtrls() {
+        for Hwnd, WebView in this.ActiveHwnds {
+            try WebView.Close()
+        }
+    }
+
+    static ConvertColor(RGB) => (RGB := RGB ~= "^0x" ? RGB : "0x" RGB, (((RGB & 0xFF) << 16) | (RGB & 0xFF00) | (RGB >> 16 & 0xFF)) << 8 | 0xFF) ;Must be a string
+
+    static CreateFileFromResource(ResourceName, DestinationDir := WebViewCtrl.TempDir) { ;Create a file from an installed resource -- works like a dynamic `FileInstall()`
+        if (!A_IsCompiled) {
+            return
+        }
+
+        ResourceName := StrReplace(ResourceName, "/", "\")
+        SplitPath(ResourceName, &OutFileName, &OutDir, &OutExt)
+        ResourceType := OutExt = "bmp" || OutExt = "dib" ? 2 : OutExt = "ico" ? 14 : OutExt = "htm" || OutExt = "html" || OutExt = "mht" ? 23 : OutExt = "manifest" ? 24 : 10
+        Module := DllCall("GetModuleHandle", "Ptr", 0, "Ptr")
+        Resource := DllCall("FindResource", "Ptr", Module, "Str", ResourceName, "UInt", ResourceType, "Ptr")
+        ResourceSize := DllCall("SizeofResource", "Ptr", Module, "Ptr", Resource)
+        ResourceData := DllCall("LoadResource", "Ptr", Module, "Ptr", Resource, "Ptr")
+        ConvertedData := DllCall("LockResource", "Ptr", ResourceData, "Ptr")
+        TextData := StrGet(ConvertedData, ResourceSize, "UTF-8")
+
+        if (!DirExist(DestinationDir "\" OutDir)) {
+            DirCreate(DestinationDir "\" OutDir)
+        }
+
+        if (FileExist(DestinationDir "\" ResourceName)) {
+            ExistingFile := FileOpen(DestinationDir "\" ResourceName, "r")
+            ExistingFile.RawRead(TempBuffer := Buffer(ResourceSize))
+            ExistingFile.Close()
+            if (DllCall("ntdll\memcmp", "Ptr", TempBuffer, "Ptr", ConvertedData, "Ptr", ResourceSize)) {
+                FileSetAttrib("-R", DestinationDir "\" ResourceName)
+                FileDelete(DestinationDir "\" ResourceName)
+            }
+        }
+
+        if (!FileExist(DestinationDir "\" ResourceName)) {
+            TempFile := FileOpen(DestinationDir "\" ResourceName, "w")
+            TempFile.RawWrite(ConvertedData, ResourceSize)
+            TempFile.Close()
+            FileSetAttrib("+HR", DestinationDir "\" OutDir)
+            FileSetAttrib("+HR", DestinationDir "\" ResourceName)
+        }
+    }
+
+    static EscapeHtml(Text) => StrReplace(StrReplace(StrReplace(StrReplace(StrReplace(Text, "&", "&amp;"), "<", "&lt;"), ">", "&gt;"), "`"", "&quot;"), "'", "&#039;")
+
+    static EscapeJavaScript(Text) => StrReplace(StrReplace(StrReplace(Text, '\', '\\'), '"', '\"'), '`n', '\n')
+
+    static ExeRead(ResourcePath) {
+        ResourcePath := StrReplace(StrUpper(LTrim(StrReplace(ResourcePath, "/", "\"), "\")), "%20", " ")
+        SplitPath(ResourcePath,,, &OutExt)
+        ResourceType := (OutExt = "bmp" || OutExt = "dib") ? 2 : (OutExt = "ico") ? 14 : (OutExt = "htm" || OutExt = "html" || OutExt = "mht") ? 23 : (OutExt = "manifest") ? 24 : 10
+        Module := DllCall("GetModuleHandle", "Ptr", 0, "Ptr")
+        Resource := DllCall("FindResource", "Ptr", Module, "Str", ResourcePath, "UInt", ResourceType, "Ptr")
+        if (!Resource) {
+            return
+        }
+        ResourceSize := DllCall("SizeofResource", "Ptr", Module, "Ptr", Resource)
+        ResourceData := DllCall("LoadResource", "Ptr", Module, "Ptr", Resource, "Ptr")
+        ConvertedData := DllCall("LockResource", "Ptr", ResourceData, "Ptr")
+        return WebView2.CreateMemStream(ConvertedData, ResourceSize)
+    }
+
+    static ForEach(Obj, Parent := "Default", Depth := 0) {
+        if(!IsObject(Obj) || (Type(Obj) = "ComObject")) {
+            return
+        }
+
+        Output := ""
+        for Key, Value, in Obj.OwnProps() {
+            try Output .= "`n" Parent " >> " Key
+            try Output .= ": " Value
+            try Output .= WebViewCtrl.ForEach(Value, Parent " >> " Key, Depth + 1)
+        }
+        for Key, Value in base_props(Obj) {
+            try Output .= "`n" Parent " >> " Key
+            try Output .= ": " Value
+            try Output .= WebViewCtrl.ForEach(Value, Parent " >> " Key, Depth + 1)
+        }
+        return Depth ? Output : Trim(Output, "`n")
+
+        base_props(Obj) {
+            iter := Obj.Base.OwnProps(), iter() ;skip `__Class`
+            return next
+
+            next(&Key, &Value, *) {
+                while (iter(&Key))
+                    ; try if !((Value := Obj.%Key%) is Func)
+                        return true
+                return false
+            }
+        }
+    }
+
+    static FormatHtml(FormatStr, Values*) {
+        for Index, Value, in Values {
+            Values[Index] := WebViewCtrl.EscapeHtml(Value)
+        }
+        return Format(FormatStr, Values*)
+    }
+
+    static ParseUri(Uri) {
+        static Pattern := "^(?:(?<Scheme>\w+):)?(?://(?:(?<UserInfo>[^@]+)@)?(?<Host>[^:/?#]+)(?::(?<Port>\d+))?)?(?<Path>[^?#]*)?(?:\?(?<Query>[^#]*))?(?:#(?<Fragment>.*))?$"
+        if (!RegExMatch(String(Uri), Pattern, &Match)) {
+            return
+        }
+        Parsed := {}
+        Parsed.Scheme := Match["Scheme"], Parsed.UserInfo := Match["UserInfo"], Parsed.Host := Match["Host"]
+        Parsed.Port := Match["Port"], Parsed.Path := Match["Path"], Parsed.Query := Match["Query"]
+        Parsed.Fragment := Match["Fragment"], Parsed.Authority := (Parsed.UserInfo != "" ? Parsed.UserInfo "@" : "") . Parsed.Host . (Parsed.Port != "" ? ":" Parsed.Port : "")
+        return Parsed
+    }
+
+    ;-------------------------------------------------------------------------------------------
+    ;WebViewCtrl class assignments
+    AddCallbackToScript(CallbackName, Callback) => this.AddHostObjectToScript(CallbackName, Callback.Bind(this)) ;Similar to `AddHostObjectToScript()`, but only registers a callback
+    RemoveCallbackFromScript(CallbackName) => this.RemoveHostObjectFromScript(CallbackName) ;Removes a registered callback
+    Debug() {
+        this.OpenDevToolsWindow()
+    }
+
+    Move(Params*) => (Super.Move(Params*), this.wvc.Fill())
+
+    SimplePrintToPdf(FileName := "", Orientation := "Portrait", Timeout := 5000) {
+        Loop {
+            FileName := FileSelect("S", tFileName := IsSet(FileName) ? FileName : "",, "*.pdf")
+            if (FileName = "") {
+                return CancelMsg()
+            }
+
+            SplitPath(FileName, &OutFileName, &OutDir, &OutExt)
+            FileName := OutExt = "" ? FileName ".pdf" : Filename
+            if (FileExist(FileName)) {
+                Overwrite := OverwriteMsg()
+                if (Overwrite = "No") {
+                    continue
+                } else if (Overwrite = "Cancel") {
+                    return CancelMsg()
+                }
+            }
+            break
+        }
+
+        Settings := this.Environment.CreatePrintSettings()
+        Settings.Orientation := Orientation = "Portrait" ? WebView2.PRINT_ORIENTATION.PORTRAIT : WebView2.PRINT_ORIENTATION.LANDSCAPE
+        PrintPromise := this.PrintToPdfAsync(FileName, Settings)
+        try PrintPromise.await(Timeout)
+        if (!PrintPromise.Result) {
+            ErrorMsg()
+        } else {
+            if (MsgBox("Would you like to open this PDF?", "Print to PDF", "262148") = "Yes") {
+                Run(FileName)
+            }
+        }
+
+        ErrorMsg() => MsgBox("An error occurred while attempting to save the file.`n" FileName, "Print to PDF", "262144")
+        CancelMsg() => MsgBox("Print Canceled", "Print to PDF", "262144")
+        OverwriteMsg() => MsgBox(OutFileName " already exist.`nWould you like to overwrite it?", "Confirm Save As", "262195")
+    }
+
+    ;-------------------------------------------------------------------------------------------
+    ;Controller class assignments
+    Fill() => this.wvc.Fill()
+    CoreWebView2 => this.wvc.CoreWebView2 ;Gets the CoreWebView2 associated with this CoreWebView2Controller
+
+    /**
+     * Returns a boolean representing if the WebView2 instance is visible
+     */
+    IsVisible { ;Boolean => Determines whether to show or hide the WebView
+        get => this.wvc.IsVisible
+        set => this.wvc.IsVisible := Value
+    }
+    Bounds { ;Rectangle => Gets or sets the WebView bounds
+        /**
+         * Returns a Buffer()
+         * You can extract the X, Y, Width, and Height using NumGet()
+         * X is at offset 0, Y at offset 4, Width at offset 8, Height at offset 12.
+        **/
+        get => this.wvc.Bounds
+
+        /**
+         * Value must be a Buffer(16) that you've inserted values into
+         * using NumPut(). See the above notes regarding the appropriate offsets.
+        **/
+        set => this.wvc.Bounds := Value
+    }
+
+    Bounds(X?, Y?, Width?, Height?) { ;Get: Object with X, Y, Width, Height properties; Set:
+        tBounds := this.wvc.Bounds
+        if (IsSet(X) || IsSet(Y) || IsSet(Width) || IsSet(Height)) {
+            IsSet(X) ? NumPut("Int", X, tBounds, 0) : 0
+            IsSet(Y) ? NumPut("Int", Y, tBounds, 4) : 0
+            IsSet(Width) ? NumPut("Int", Width, tBounds, 8) : 0
+            IsSet(Height) ? NumPut("Int", Height, tBounds, 12) : 0
+            this.Bounds := tBounds
+        } else {
+            return Bounds := {
+                X: NumGet(tBounds, 0, "Int"),
+                Y: NumGet(tBounds, 4, "Int"),
+                Width: NumGet(tBounds, 8, "Int"),
+                Height: NumGet(tBounds, 12, "Int")
+            }
+        }
+    }
+    ZoomFactor { ;Double => Gets or sets the zoom factor for the WebView
+        get => this.wvc.ZoomFactor
+        set => this.wvc.ZoomFactor := Value
+    }
+    ParentWindow { ;Integer => Gets the parent window provided by the app or sets the parent window that this WebView is using to render content
+        get => this.wvc.ParentWindow ;Returns the `Hwnd` of the Ctrl this instance is attached to
+        set => this.wvc.ParentWindow := Value ;Not recommened to use set => because it dettaches the WebView2 window and can break the software
+    }
+    DefaultBackgroundColor { ;HexColorCode => Gets or sets the WebView default background color.
+        get {
+            BGRA := Format("{:X}", this.wvc.DefaultBackgroundColor)
+            return SubStr(BGRA, 5, 2) SubStr(BGRA, 3, 2) SubStr(BGRA, 1, 2)
+        }
+        set => this.wvc.DefaultBackgroundColor := WebViewCtrl.ConvertColor(Value)
+    }
+
+    /**
+     * RasterizationScale, ShouldDetectMonitorScaleChanges, and BoundsMode all work together
+     * If you want to use set => (RasterizationScale||ShouldDetectMonitorScaleChanges||BoundsMode)
+     * you will need to turn on DPI Awareness for your script by using the following DllCall
+     * DllCall("SetThreadDpiAwarenessContext", "ptr", -3, "ptr") ;**NOTE: DpiAwareness Now causes fatal error, good luck**
+    **/
+    RasterizationScale { ;Double => Gets or sets the WebView rasterization scale
+        get => this.wvc.RasterizationScale
+        set => this.wvc.RasterizationScale := Value
+    }
+    ShouldDetectMonitorScaleChanges { ;Boolean => Determines whether the WebView will detect monitor scale changes
+        get => this.wvc.ShouldDetectMonitorScaleChanges
+        set => this.wvc.ShouldDetectMonitorScaleChanges := Value
+    }
+    BoundsMode { ;Boolean => Gets or sets the WebView bounds mode
+        /**
+         * 0: UseRawPixels; Bounds property represents raw pixels. Physical size of Webview is not impacted by RasterizationScale
+         * 1: UseRasterizationScale; Bounds property represents logical pixels and the RasterizationScale property is used to get the physical size of the WebView.
+        **/
+        get => this.wvc.BoundsMode
+        set => this.wvc.BoundsMode := Value
+    }
+    AllowExternalDrop { ;Boolean => Gets or sets the WebView allow external drop property
+        get => this.wvc.AllowExternalDrop
+        set => this.wvc.AllowExternalDrop := Value
+    }
+    SetBoundsAndZoomFactor(Bounds, ZoomFactor) => this.wvc.SetBoundsAndZoomFactor(Bounds, ZoomFactor) ;Updates Bounds and ZoomFactor properties at the same time
+
+    /**
+     * MoveFocus()
+     * 1: Next; Specifies that the focus is moved due to Tab traversal forward
+     * 2: Previous; Specifies that the focus is moved due to Tab traversal backward
+     * 0: Programmatic; Specifies that the code is setting focus into WebView
+    **/
+    MoveFocus(Reason) => this.wvc.MoveFocus(Reason) ;Moves focus into WebView
+
+    /**
+     * NotifyParentWindowPositionChanged()
+     * Notifies the WebView that the parent (or any ancestor) HWND moved
+     * Example: Calling this method updates dialog windows such as the DownloadDialog
+    **/
+    NotifyParentWindowPositionChanged() => this.wvc.NotifyParentWindowPositionChanged()
+
+    ;-------------------------------------------------------------------------------------------
+    ;WebView2Core class assignments
+    Settings => this.wv.Settings ;Returns Map() of Settings
+        AreBrowserAcceleratorKeysEnabled { ;Boolean => Determines whether browser-specific accelerator keys are enabled
+            get => this.Settings.AreBrowserAcceleratorKeysEnabled
+            set => this.Settings.AreBrowserAcceleratorKeysEnabled := Value
+        }
+        AreDefaultContextMenusEnabled { ;Boolean => Determines whether the default context menus are shown to the user in WebView
+            get => this.Settings.AreDefaultContextMenusEnabled
+            set => this.Settings.AreDefaultContextMenusEnabled := Value
+        }
+        AreDefaultScriptDialogsEnabled { ;Boolean => Determines whether WebView renders the default JavaScript dialog box
+            get => this.Settings.AreDefaultScriptDialogsEnabled
+            set => this.Settings.AreDefaultScriptDialogsEnabled := Value
+        }
+        AreDevToolsEnabled { ;Boolean => Determines whether the user is able to use the context menu or keyboard shortcuts to open the DevTools window
+            get => this.Settings.AreDevToolsEnabled
+            set => this.Settings.AreDevToolsEnabled := Value
+        }
+        AreHostObjectsAllowed { ;Boolean => Determines whether host objects are accessible from the page in WebView
+            get => this.Settings.AreHostObjectsAllowed
+            set => this.Settings.AreHostObjectsAllowed := Value
+        }
+        HiddenPdfToolbarItems { ;Integer => Used to customize the PDF toolbar items
+            /**
+             * None:         0
+             * Save:         1
+             * Print:        2
+             * SaveAs:       4
+             * ZoomIn:       8
+             * ZoomOut:      16
+             * Rotate:       32
+             * FitPage:      64
+             * PageLayout:   128
+             * Bookmarks:    256 ;This option is broken in the current runtime. See: https://github.com/MicrosoftEdge/WebView2Feedback/issues/2866
+             * PageSelector  512
+             * Search:       1024
+             * FullScreen:   2048
+             * MoreSettings: 4096
+             * Add up numbers if you want to hide multiple items, Ex: 257 to hide Bookmarks and Save
+            **/
+            get => this.Settings.HiddenPdfToolbarItems
+            set => this.Settings.HiddenPdfToolbarItems := Value
+        }
+        IsBuiltInErrorPageEnabled { ;Boolean => Determines whether to disable built in error page for navigation failure and render process failure
+            get => this.Settings.IsBuiltInErrorPageEnabled
+            set => this.Settings.IsBuiltInErrorPageEnabled := Value
+        }
+        IsGeneralAutofillEnabled { ;Boolean => Determines whether general form information will be saved and autofilled
+            get => this.Settings.IsGeneralAutofillEnabled
+            set => this.Settings.IsGeneralAutofillEnabled := Value
+        }
+        IsNonClientRegionSupportEnabled { ;Boolean => The IsNonClientRegionSupportEnabled property enables web pages to use the app-region CSS style
+            get => this.wv.Settings.IsNonClientRegionSupportEnabled
+            set => this.wv.Settings.IsNonClientRegionSupportEnabled := Value
+        }
+        IsPasswordAutosaveEnabled { ;Boolean => Determines whether password information will be autosaved
+            get => this.Settings.IsPasswordAutosaveEnabled
+            set => this.Settings.IsPasswordAutosaveEnabled := Value
+        }
+        IsPinchZoomEnabled { ;Boolean => Determines the ability of the end users to use pinching motions on touch input enabled devices to scale the web content in the WebView2
+            get => this.Settings.IsPinchZoomEnabled
+            set => this.Settings.IsPinchZoomEnabled := Value
+        }
+        IsReputationCheckingRequired { ;Boolean => Determines whether SmartScreen is enabled when visiting web pages
+            get => this.Settings.IsReputationCheckingRequired
+            set => this.Settings.IsReputationCheckingRequired := Value
+        }
+        IsScriptEnabled { ;Boolean => Determines whether running JavaScript is enabled in all future navigations in the WebView
+            get => this.Settings.IsScriptEnabled
+            set => this.Settings.IsScriptEnabled := Value
+        }
+        IsStatusBarEnabled { ;Boolean => Determines whether the status bar is displayed
+            get => this.Settings.IsStatusBarEnabled
+            set => this.Settings.IsStatusBarEnabled := Value
+        }
+        IsSwipeNavigationEnabled { ;Boolean => Determines whether the end user to use swiping gesture on touch input enabled devices to navigate in WebView2
+            get => this.Settings.IsSwipeNavigationEnabled
+            set => this.Settings.IsSwipeNavigationEnabled := Value
+        }
+        IsWebMessageEnabled { ;Boolean => Determines whether communication from the host to the top-level HTML document of the WebView is allowed
+            get => this.Settings.IsWebMessageEnabled
+            set => this.Settings.IsWebMessageEnabled := Value
+        }
+        IsZoomControlEnabled { ;Boolean => Determines whether the user is able to impact the zoom of the WebView
+            get => this.Settings.IsZoomControlEnabled
+            set => this.Settings.IsZoomControlEnabled := Value
+        }
+        UserAgent { ;String => Determines WebView2's User Agent
+            get => this.Settings.UserAgent
+            set => this.Settings.UserAgent := Value
+        }
+
+    Source => this.wv.Source ;Returns Uri of current page
+    NavigateToString(HtmlContent) => this.wv.NavigateToString(HtmlContent) ;Navigate to text (essentially create a webpage from a string)
+    AddScriptToExecuteOnDocumentCreatedAsync(JavaScript) => this.wv.AddScriptToExecuteOnDocumentCreatedAsync(JavaScript) ;Adds JavaScript to run when the DOM is created
+    AddScriptToExecuteOnDocumentCreated(JavaScript) {
+        AddScriptToExecuteOnDocumentCreatedPromise := this.wv.AddScriptToExecuteOnDocumentCreatedAsync(JavaScript)
+        AddScriptToExecuteOnDocumentCreatedPromise.await()
+        return Trim(AddScriptToExecuteOnDocumentCreatedPromise.Result, "`"")
+    }
+    RemoveScriptToExecuteOnDocumentCreated(Id) => this.wv.RemoveScriptToExecuteOnDocumentCreated(Id)
+    ExecuteScriptAsync(JavaScript) => this.wv.ExecuteScriptAsync(JavaScript) ;Execute code on the current Webpage
+    ExecuteScript(JavaScript, Timeout := -1) {
+        ExecuteScriptPromise := this.wv.ExecuteScriptAsync(JavaScript)
+        try {
+            ExecuteScriptPromise.await(Timeout)
+        } catch {
+            ExecuteScriptPromise.Result := "Timeout Error"
+        }
+        return Trim(ExecuteScriptPromise.Result, "`"")
+    }
+    CapturePreviewAsync(ImageFormat, ImageStream) => this.wv.CapturePreviewAsync(ImageFormat, ImageStream) ;Take a "screenshot" of the current WebView2 content
+    CapturePreview(ImageFormat, ImageStream) {
+        CapturePreviewPromise := this.wv.CapturePreviewAsync(ImageFormat, ImageStream)
+        CapturePreviewPromise.await()
+        return CapturePreviewPromise.Result
+    }
+    Reload() => this.wv.Reload() ;Reloads the current page
+
+    /**
+     * In order to use PostWebMessageAsJson() or PostWebMessageAsString(), you'll need to setup your webpage to listen to messages
+     * First, MyWindow.Settings.IsWebMessageEnabled must be set to true
+     * On your webpage itself, you'll need to setup an EventListner and Handler for the WebMessages
+     *     window.chrome.webview.addEventListener('message', ahkWebMessage);
+     *     function ahkWebMessage(Msg) {
+     *         console.log(Msg);
+     *     }
+    **/
+    PostWebMessageAsJson(WebMessageAsJson) => this.wv.PostWebMessageAsJson(WebMessageAsJson) ;Posts the specified JSON message to the top level document in this WebView
+    PostWebMessageAsString(WebMessageAsString) => this.wv.PostWebMessageAsString(WebMessageAsString) ;Posts the specified STRING message to the top level document in this WebView
+    CallDevToolsProtocolMethodAsync(MethodName, ParametersAsJson) => this.wv.CallDevToolsProtocolMethodAsync(MethodName, ParametersAsJson) ;Runs an DevToolsProtocol method
+
+    /**
+     * @returns {Boolean} The process ID of the browser process that hosts the WebView2.
+     * @see {@link https://learn.microsoft.com/en-us/dotnet/api/microsoft.web.webview2.core.corewebview2.browserprocessid|BrowserProcessId}
+     */
+    BrowserProcessId => this.wv.BrowserProcessId ;Returns the process ID of the browser process that hosts the WebView2
+
+    CanGoBack => this.wv.CanGoBack ;Returns true if the WebView is able to navigate to a previous page in the navigation history
+    CanGoForward => this.wv.CanGoForward ;Returns true if the WebView is able to navigate to a next page in the navigation history
+
+    /**
+     * Navigates the WebView to the previous page in the navigation history.
+     * @see {@link https://learn.microsoft.com/en-us/dotnet/api/microsoft.web.webview2.core.corewebview2.goback|GoBack}
+     */
+    GoBack() => this.wv.GoBack() ;GoBack to the previous page in the navigation history
+    GoForward() => this.wv.GoForward() ;GoForward to the next page in the navigation history
+    GetDevToolsProtocolEventReceiver(EventName) => this.wv.GetDevToolsProtocolEventReceiver(EventName) ;Gets a DevTools Protocol event receiver that allows you to subscribe to a DevToolsProtocol event
+    Stop() => this.wv.Stop() ;Stops all navigations and pending resource fetches
+    DocumentTitle => this.wv.DocumentTitle ;Returns the DocumentTitle of the current webpage
+    AddHostObjectToScript(ObjName, Obj) => this.wv.AddHostObjectToScript(ObjName, Obj) ;Create object link between the WebView2 and the AHK Script
+    RemoveHostObjectFromScript(ObjName) => this.wv.RemoveHostObjectFromScript(ObjName) ;Delete object link from the WebView2
+    OpenDevToolsWindow() => this.wv.OpenDevToolsWindow() ;Opens DevTools for the current WebView2
+    ContainsFullScreenElement => this.wv.ContainsFullScreenElement ;Returns true if the WebView contains a fullscreen HTML element
+    AddWebResourceRequestedFilter(Uri, ResourceContext) => this.wv.AddWebResourceRequestedFilter(Uri, ResourceContext) ;Adds a URI and resource context filter for the WebResourceRequested event
+    RemoveWebResourceRequestedFilter(Uri, ResourceContext) => this.wv.RemoveWebResourceRequestedFilter(Uri, ResourceContext) ;Removes a matching WebResource filter that was previously added for the WebResourceRequested event
+    NavigateWithWebResourceRequest(Request) => this.wv.NavigateWithWebResourceRequest(Request) ;Navigates using a constructed CoreWebView2WebResourceRequest object
+    CookieManager => this.wv.CookieManager ;Gets the CoreWebView2CookieManager object associated with this CoreWebView2
+        GetCookiesAsync(Uri) => this.CookieManager.GetCookies(Uri) ;Gets a list of cookies matching the specific URI
+
+    Environment => this.wv.Environment ;Returns Map() of Environment settings
+        CreateCoreWebView2ControllerAsync(ParentWindow) => this.Environment.CreateWebView2ControllerAsync(ParentWindow)
+        CreateWebResourceResponse(Content, StatusCode, ReasonPhrase, Headers) => this.Environment.CreateWebResourceResponse(Content, StatusCode, ReasonPhrase, Headers)
+        BrowserVersionString => this.Environment.BrowserVersionString ;Returns the browser version info of the current CoreWebView2Environment, including channel name if it is not the stable channel
+        FailureReportFolderPath => this.Environment.FailureReportFolderPath ;Returns the failure report folder that all CoreWebView2s created from this environment are using
+        UserDataFolder => this.Environment.UserDataFolder ;Returns the user data folder that all CoreWebView2s created from this environment are using
+        CreateWebResourceRequest(Uri, Method, PostData, Headers) => this.Environment.CreateWebResourceRequest(Uri, Method, PostData, Headers) ;Creates a new CoreWebView2WebResourceRequest object
+        CreateCoreWebView2CompositionControllerAsync(ParentWindow) => this.Environment.CreateCoreWebView2CompositionControllerAsync(ParentWindow) ;Creates a new WebView for use with visual hosting
+        CreateCoreWebView2PointerInfo() => this.Environment.CreateCoreWebView2PointerInfo() ;Returns Map() of a combined win32 POINTER_INFO, POINTER_TOUCH_INFO, and POINTER_PEN_INFO object
+        GetAutomationProviderForWindow(Hwnd) => this.Environment.GetAutomationProviderForWindow(Hwnd) ;PRODUCES ERROR, REACH OUT TO THQBY
+        CreatePrintSettings() => this.Environment.CreatePrintSettings() ;Creates the CoreWebView2PrintSettings used by the PrintToPdfAsync(String, CoreWebView2PrintSettings) method
+        GetProcessInfos() => this.Environment.GetProcessInfos() ;Returns the list of all CoreWebView2ProcessInfo using same user data folder except for crashpad process
+        CreateContextMenuItem(Label, IconStream, Kind) => this.Environment.CreateContextMenuItem(Label, IconStream, Kind) ;PRODUCES ERROR, REACH OUT TO THQBY
+        CreateCoreWebView2ControllerOptions() => this.Environment.CreateCoreWebView2ControllerOptions() ;PRODUCES ERROR, REACH OUT TO THQBY
+        CreateCoreWebView2ControllerWithOptionsAsync(ParentWindow, Options) => this.Environment.CreateCoreWebView2ControllerWithOptionsAsync(ParentWindow, Options) ;PRODUCES ERROR, REACH OUT TO THQBY -- I think the issue is part of the `CreateCoreWEbView2ControllerOptions()` method
+        CreateCoreWebView2CompositionControllerWithOptionsAsync(ParentWindow, Options) => this.Environment.CreateCoreWebView2CompositionControllerWithOptionsAsync(ParentWindow, Options) ;PRODUCES ERROR, REACH OUT TO THQBY -- I think the issue is part of the `CreateCoreWEbView2ControllerOptions()` method
+        CreateSharedBuffer(Size) => this.Environment.CreateSharedBuffer(Size) ;Create a shared memory based buffer with the specified size in bytes -- PRODUCES ERROR, REACH OUT TO THQBY
+
+    TrySuspendAsync() => this.wv.TrySuspendAsync() ;Must set `IsVisible := 0` before trying to call
+    Resume() => this.wv.Resume() ;Resumes the WebView so that it resumes activities on the web page. Will fail unless you set `IsVisible := 1`
+    IsSuspended => this.wv.IsSuspended ;Returns true if the WebView is suspended
+    SetVirtualHostNameToFolderMapping(HostName, FolderPath, AccessKind) => this.wv.SetVirtualHostNameToFolderMapping(HostName, FolderPath, AccessKind) ;Sets a mapping between a virtual host name and a folder path to make available to web sites via that host name
+    ClearVirtualHostNameToFolderMapping(HostName) => this.wv.ClearVirtualHostNameToFolderMapping(HostName) ;Clears a host name mapping for local folder that was added by SetVirtualHostNameToFolderMapping()
+    OpenTaskManagerWindow() => this.wv.OpenTaskManagerWindow() ;Opens the Browser Task Manager view as a new window in the foreground
+    IsMuted { ;Indicates whether all audio output from this CoreWebView2 is muted or not. Set to true will mute this CoreWebView2, and set to false will unmute this CoreWebView2. true if audio is muted
+        get => this.wv.IsMuted
+        set => this.wv.IsMuted := Value
+    }
+    IsDocumentPlayingAudio => this.wv.IsDocumentPlayingAudio ;Returns true if audio is playing even if IsMuted is true
+    IsDefaultDownloadDialogOpen => this.wv.IsDefaultDownloadDialogOpen ;Returns true if the default download dialog is currently open
+    OpenDefaultDownloadDialog() => this.wv.OpenDefaultDownloadDialog() ;Opens the DownloadDialog Popup Window
+    CloseDefaultDownloadDialog() => this.wv.CloseDefaultDownloadDialog() ;Closes the DownloadDialog Popup Window
+    DefaultDownloadDialogCornerAlignment { ;Position of DownloadDialog does not update until after the WebView2 position or size has changed
+        get => this.wv.DefaultDownloadDialogCornerAlignment ;Return the current corner the DownloadDialog will show up in (0 := TopLeft, 1 := TopRight, 2 := BottomLeft, 3 := BottomRight)
+        set => this.wv.DefaultDownloadDialogCornerAlignment := Value ;Set the corner of the WebView2 that the DownloadDialog will show up in (0 := TopLeft, 1 := TopRight, 2 := BottomLeft, 3 := BottomRight)
+    }
+    DefaultDownloadDialogMargin { ;Working, but I don't know how to accurately assign a new Margin yet. We can assign one via an Integer, but it's hit and miss to get the position correct
+        get => this.wv.DefaultDownloadDialogMargin
+        set => this.wv.DefaultDownloadDialogMargin := Value
+    }
+    CallDevToolsProtocolMethodForSessionAsync(SessionId, MethodName, ParametersAsJson) => this.wv.CallDevToolsProtocolMethodForSessionAsync(SessionId, MethodName, ParametersAsJson) ;Runs a DevToolsProtocol method for a specific session of an attached target
+    StatusBarText => this.wv.StatusBarText ;Returns the current text of the WebView2 StatusBar
+    Profile => this.wv.Profile ;Returns the associated CoreWebView2Profile object of CoreWebView2
+    ClearServerCertificateErrorActionsAsync() => this.wv.ClearServerCertificateErrorActionsAsync()
+    FaviconUri => this.wv.FaviconUri ;Returns the Uri as a string of the current Favicon. This will be an empty string if the page does not have a Favicon
+    GetFaviconAsync(Format) => this.wv.GetFaviconAsync(Format) ;Get the downloaded Favicon image for the current page and copy it to the image stream
+    PrintAsync(PrintSettings) => this.wv.PrintAsync(PrintSettings) ;Print the current web page asynchronously to the specified printer with the provided settings
+    PrintToPdfAsync(ResultFilePath, PrintSettings) => this.wv.PrintToPdfAsync(ResultFilePath, PrintSettings) ;Print the current page to PDF with the provided settings
+    ShowPrintUI(PrintDialogKind) => this.wv.ShowPrintUI(PrintDialogKind) ;Opens the print dialog to print the current web page. Browser printDialogKind := 0, System printDialogKind := 1
+    PrintToPdfStreamAsync(PrintSettings) => this.wv.PrintToPdfStreamAsync(PrintSettings) ;Provides the PDF data of current web page for the provided settings to a Stream
+    PostSharedBufferToScript(SharedBuffer, Access, AdditionalDataAsJson) => this.wv.PostSharedBufferToScript(SharedBuffer, Access, AdditionalDataAsJson) ;Share a shared buffer object with script of the main frame in the WebView
+    MemoryUsageTargetLevel { ;0 = Normal, 1 = Low; Low can be used for apps that are inactive to conserve memory usage
+        get => this.wv.MemoryUsageTargetLevel
+        set => this.wv.MemoryUsageTargetLevel := Value
+    }
+
+    ;-------------------------------------------------------------------------------------------
+    ;Handler Assignments
+    static PlaceholderHandler(Handler, ICoreWebView2, Args) {
+        ;MsgBox(handler, "WebviewWindow.PlaceholderHandler()", "262144")
+    }
+
+    ;Controller
+    ZoomFactorChanged(Handler) => this.wvc.add_ZoomFactorChanged(Handler)
+    MoveFocusRequested(Handler) => this.wvc.add_MoveFocusRequested(Handler)
+    GotFocus(Handler) => this.wvc.add_GotFocus(Handler)
+    LostFocus(Handler) => this.wvc.add_LostFocus(Handler)
+    AcceleratorKeyPressed(Handler) => this.wvc.add_AcceleratorKeyPressed(Handler)
+    RasterizationScaleChanged(Handler) => this.wvc.add_RasterizationScaleChanged(Handler)
+
+    ;Core
+    NavigationStarting(Handler) => this.wv.add_NavigationStarting(Handler)
+    ContentLoading(Handler) => this.wv.add_ContentLoading(Handler)
+    SourceChanged(Handler) => this.wv.add_SourceChanged(Handler)
+    HistoryChanged(Handler) => this.wv.add_HistoryChanged(Handler)
+    NavigationCompleted(Handler) => this.wv.add_NavigationCompleted(Handler)
+    ScriptDialogOpening(Handler) => this.wv.add_ScriptDialogOpening(Handler)
+    PermissionRequested(Handler) => this.wv.add_PermissionRequested(Handler)
+    ProcessFailed(Handler) => this.wv.add_ProcessFailed(Handler)
+    WebMessageReceived(Handler) => this.wv.add_WebMessageReceived(Handler)
+    NewWindowRequested(Handler) => this.wv.add_NewWindowRequested(Handler)
+    DocumentTitleChanged(Handler) => this.wv.add_DocumentTitleChanged(Handler)
+    ContainsFullScreenElementChanged(Handler) => this.wv.add_ContainsFullScreenElementChanged(Handler)
+    WebResourceRequested(Handler) => this.wv.add_WebResourceRequested(Handler)
+    WindowCloseRequested(Handler) => this.wv.add_WindowCloseRequested(Handler)
+    WebResourceResponseReceived(Handler) => this.wv.add_WebResourceResponseReceived(Handler)
+    DOMContentLoaded(Handler) => this.wv.add_DOMContentLoaded(Handler)
+    FrameCreated(Handler) => this.wv.add_FrameCreated(Handler)
+    DownloadStarting(Handler) => this.wv.add_ownloadStarting(Handler)
+    ClientCertificateRequested(Handler) => this.wv.add_ClientCertificateRequested(Handler)
+    IsMutedChanged(Handler) => this.wv.add_IsMutedChanged(Handler)
+    IsDocumentPlayingAudioChanged(Handler) => this.wv.add_IsDocumentPlayingAudioChanged(Handler)
+    IsDefaultDownloadDialogOpenChanged(Handler) => this.wv.add_IsDefaultDownloadDialogOpenChanged(Handler)
+    BasicAuthenticationRequested(Handler) => this.wv.add_BasicAuthenticationRequested(Handler)
+    ContextMenuRequested(Handler) => this.wv.add_ContextMenuRequested(Handler)
+    StatusBarTextChanged(Handler) => this.wv.add_StatusBarTextChanged(Handler)
+    ServerCertificateErrorDetected(Handler) => this.wv.add_ServerCertificateErrorDetected(Handler)
+    FaviconChanged(Handler) => this.wv.add_FaviconChanged(Handler)
+    LaunchingExternalUriScheme(Handler) => this.wv.add_LaunchingExternalUriScheme(Handler)
 }
