@@ -146,7 +146,16 @@ GroupAdd("ScriptGroup", "ahk_pid" ScriptPID)
 ;NOTE: `+ToolWindow` (WS_EX_TOOLWINDOW) is what previously hid this window from the taskbar
 ;and Alt+Tab and left only a Close button (no Minimize/Maximize). Use the normal application
 ;window style instead so the new GUI shows up as its own taskbar window with Min/Max/Restore.
-MyWindow := WebViewGui("+Resize +Caption +MinimizeBox +MaximizeBox", "Natro Macro (Gummy Boot(strap) Edition - CONCEPT)")
+;
+;IMPORTANT: always pass an explicit WebView2 DataDir here. If it is left empty, the vendored
+;`WebViewToo_Resources\WebView2.ahk` (which MUST NOT be edited - see CONTEXT.md) falls back to the
+;Edge browser's own profile (%LOCALAPPDATA%\Microsoft\Edge\User Data). When Edge or any other
+;WebView2 host is using that profile, the folder is locked and CreateCoreWebView2EnvironmentWithOptions
+;returns 0x800700AA (ERROR_BUSY: "The requested resource is in use") during auto-execute. This GUI is
+;stateless local content, so use a per-user, per-script temp folder: it never touches the repo/install
+;folder, and the OS may purge it (nothing of value is lost).
+WebView2DataDir := A_Temp "\" RegExReplace(A_ScriptName, "i)\.(ahk|exe)$") "\WebView2"
+MyWindow := WebViewGui("+Resize +Caption +MinimizeBox +MaximizeBox", "Natro Macro (Gummy Boot(strap) Edition - CONCEPT)", , {DataDir: WebView2DataDir})
 MyWindow.OnEvent("Close", (*) => ExitApp())
 ; The GUI is served over the https virtual host "ahk.localhost", so the WebView
 ; caches index.html / its scripts. Append a per-run query so a restart always picks
