@@ -76,12 +76,17 @@ class WebView2 {
 				options.TargetCompatibleBrowserVersion := ver
 			options := this.EnvironmentOptions(options)
 		}
-		; Do NOT default to the Edge browser's own profile (%LOCALAPPDATA%\Microsoft\Edge\User Data):
-		; when Edge (or any other WebView2 app sharing that profile) is running, the folder is locked
-		; and CreateCoreWebView2EnvironmentWithOptions returns 0x800700AA (ERROR_BUSY: "The requested
-		; resource is in use"). Use an app-specific user-data folder instead.
+		; Pick a sane default for the WebView2 user-data folder (UDF). Never:
+		;  - the Edge browser's own profile (%LOCALAPPDATA%\Microsoft\Edge\User Data): if Edge or any
+		;    other WebView2 host is using it the folder is locked and CreateCoreWebView2EnvironmentWithOptions
+		;    returns 0x800700AA (ERROR_BUSY: "The requested resource is in use");
+		;  - the SDK default ("{exe}.WebView2" next to the script), which litters the macro folder and
+		;    fails under read-only install dirs.
+		; This web GUI is bundled local content and keeps no session state, so a per-user, per-script
+		; temp folder is the tidiest choice (the OS may purge it; nothing of value is lost). For an app
+		; that needs a *persistent* profile (cookies/login), use A_LocalAppData instead.
 		if !dataDir
-			dataDir := A_LocalAppData '\NatroMacro\WebView2'
+			dataDir := A_Temp '\' RegExReplace(A_ScriptName, 'i)\.(ahk|exe)$') '\WebView2'
 		DllCall(dllPath '\CreateCoreWebView2EnvironmentWithOptions', 'str', edgeRuntime,
 			'str', dataDir, 'ptr', options,
 			'ptr', this.AsyncHandler(&p, this.Environment), 'hresult')
