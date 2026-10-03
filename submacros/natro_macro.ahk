@@ -143,17 +143,23 @@ GroupAdd("ScriptGroup", "ahk_pid" ScriptPID)
 ;///////////////////////////////////////////////////////////////////////////////////////////
 ;WebViewToo v1.0.1 (breaking update): `WebviewWindow` was renamed to `WebViewGui`.
 ;`Load()` was replaced by `Navigate()` and the title moved to the constructor (native Gui).
-;Preserve the original `WebviewWindow` window style (resizable, native caption, tool window).
-MyWindow := WebViewGui("+Resize +Caption +ToolWindow", "Natro Macro (Gummy Boot(strap) Edition - CONCEPT)")
+;NOTE: `+ToolWindow` (WS_EX_TOOLWINDOW) is what previously hid this window from the taskbar
+;and Alt+Tab and left only a Close button (no Minimize/Maximize). Use the normal application
+;window style instead so the new GUI shows up as its own taskbar window with Min/Max/Restore.
+MyWindow := WebViewGui("+Resize +Caption +MinimizeBox +MaximizeBox", "Natro Macro (Gummy Boot(strap) Edition - CONCEPT)")
 MyWindow.OnEvent("Close", (*) => ExitApp())
-MyWindow.Navigate("BootstrapGUI/index.html")
+; The GUI is served over the https virtual host "ahk.localhost", so the WebView
+; caches index.html / its scripts. Append a per-run query so a restart always picks
+; up edited HTML (CSS is inline, and the changed scripts carry their own ?v= token).
+MyWindow.Navigate("BootstrapGUI/index.html?v=" A_TickCount)
 MyWindow.Debug()
 ;`NavigationCompleted` is now a `WebViewCtrl` handler method (proxied onto `WebViewGui`), not a GUI event.
 MyWindow.NavigationCompleted((*) => SetTimer(SendBootstrapState, -50))
 MyWindow.AddHostObjectToScript("ahkButtonClick", {func:WebButtonClickEvent})
 MyWindow.AddHostObjectToScript("ahkCopyGlyphCode", {func:CopyGlyphCodeEvent})
 MyWindow.AddHostObjectToScript("ahkFormSubmit", {func:FormSubmitEvent})
-MyWindow.AddHostObjectToScript("ahkUpdateState", {func:WebUpdateState})
+MyWindow.AddHostObjectToScript("ahkUpdateState", {func:WebUpdateStateSafe})
+MyWindow.AddHostObjectToScript("ahkGatherAction", {func:WebGatherActionEvent})
 MyWindow.Show("w1050 h650 Center")
 
 ; Load all settings from INI files into global variables
@@ -190,6 +196,64 @@ WebButtonClickEvent(button) {
 			return autoclicker()
 		case "status-button":
 			return timers()
+		; --- Settings tab action buttons ---
+		case "set-reset-field-defaults":
+			return nm_ResetFieldDefaultGUI()
+		case "set-reset-all":
+			return nm_ResetConfig()
+		case "set-test-reconnect":
+			return nm_testReconnect()
+		; --- Status tab action buttons ---
+		case "st-change-discord":
+			return nm_WebhookGUI()
+		case "st-reset-total-stats":
+			return nm_ResetTotalStats()
+		; --- Misc tab launcher buttons ---
+		case "misc-basic-egg":
+			return nm_BasicEggHatcher()
+		case "misc-bitterberry":
+			return nm_BitterberryFeeder()
+		case "misc-auto-jelly":
+			return blc_mutations()
+		case "misc-bee-list":
+			return nm_GenerateBeeList()
+		; --- Misc tab: tools that are now embedded in the web GUI ---
+		; These "popups" are no longer opened from the web GUI, but the classic
+		; entry points are kept for backwards compatibility.
+		case "misc-calculators":
+			return nm_BSSCalculators()
+		case "misc-ticket-calc":
+			return Run("https://docs.google.com/spreadsheets/d/1_5JP_9uZUv7PUqjL76T5orEA3MIHe4R8gLu27L8KJ-A/")
+		case "misc-ssa-calc":
+			return Run("https://docs.google.com/spreadsheets/d/1nupF_6g1TLJk1W5MpLBsfe1yk6C99-ooMMffuxdn580/")
+		case "misc-bond-calc":
+			return Run("https://docs.google.com/spreadsheets/d/1TFTAahwsB4WRmRkX4YiM8mPQyk53CDmfAKOSOYv-Bow/")
+		case "misc-beequip-calc":
+			return Run("https://docs.google.com/spreadsheets/d/10_7oay1yHgykAccrhqYp5gr-P_0jpEKMbTJS9ty4JA8/")
+		case "misc-open-log":
+			return Run('explorer.exe /e, /n, /select,"' A_WorkingDir '\settings\debug_log.txt"')
+		case "misc-copy-logs":
+			return nm_copyDebugLog()
+		case "misc-reset-hotkeys":
+			return nm_WebResetHotkeys()
+		case "misc-fps":
+			return robloxFPSGui()
+		case "misc-autoclicker-settings":
+			return nm_AutoClickerButton()
+		case "misc-hotkeys":
+			return nm_HotkeyGUI()
+		case "misc-debug":
+			return nm_DebugLogGUI()
+		case "misc-autostart":
+			return nm_AutoStartManager()
+		case "misc-night-announcement":
+			return nm_NightAnnouncementGUI()
+		case "misc-report-bug":
+			return nm_ReportBugButton()
+		case "misc-suggest":
+			return nm_MakeSuggestionButton()
+		case "misc-export-settings", "misc-import-settings":
+			return
 		default:
 			MsgBox(button)
 	}
@@ -353,7 +417,9 @@ SendBoostMessage(key, val) {
 
 
 nm_FormatFieldName(name) {
-	static map := Map("blueflower", "Blue Flower"
+	; NOTE: do NOT name this variable `map` — identifiers are case-insensitive, so
+	; `map` shadows the built-in Map() and `Map(...)` would try to call the variable.
+	static fieldMap := Map("blueflower", "Blue Flower"
 		, "mountaintop", "Mountain Top"
 		, "pinetree", "Pine Tree"
 		, "sunflower", "Sunflower"
@@ -371,9 +437,78 @@ nm_FormatFieldName(name) {
 		, "pepper", "Pepper"
 		, "coconut", "Coconut")
 	name := StrLower(Trim(name))
-	if map.Has(name)
-		return map[name]
+	if fieldMap.Has(name)
+		return fieldMap[name]
 	return StrUpper(SubStr(name, 1, 1)) SubStr(name, 2)
+}
+
+; Wrapper registered as the web host object ("ahkUpdateState"). It guarantees that a
+; bad bridge message can never surface as an unhandled promise rejection in the page,
+; and records the exact error (message + offending variable + line) for diagnosis.
+WebUpdateStateSafe(payload) {
+	global MyWindow
+	try {
+		WebUpdateState(payload)
+	} catch as e {
+		msg := "", extra := "", line := ""
+		try msg := e.Message
+		try extra := e.Extra
+		try line := e.Line
+		OutputDebug "[ahk] WebUpdateState error: " msg " | " extra " | line " line
+		try FileAppend A_Now " | " msg " | var=" extra " | line=" line " | payload=" SubStr(payload, 1, 300) "`n", "settings\nm_web_errors.txt"
+	}
+}
+
+; Send a pattern file's source text to the web GUI so the Gather tab can render the
+; pattern animation. The web side asks with {"type":"patternRequest","key":"<name>"};
+; we reply with {"type":"patternText","key":"<name>","text":"<source>"} (text is ""
+; when the file is missing). The name is restricted to the simple set the dropdown
+; uses, which also blocks path traversal (no backslash / slash / dot / colon).
+nm_WebSendPatternText(name) {
+	global MyWindow
+	if !IsSet(MyWindow)
+		return
+	text := ""
+	if (name ~= "i)^[A-Za-z0-9_\- ]+$") {
+		filePath := A_WorkingDir "\patterns\" name ".ahk"
+		try {
+			if FileExist(filePath)
+				text := FileRead(filePath, "UTF-8")
+		} catch as e {
+			OutputDebug "[ahk] pattern read failed: " name " | " e.Message
+		}
+	} else {
+		OutputDebug "[ahk] pattern request rejected (bad name): " name
+	}
+	msg := '{"type":"patternText","key":"' name '","text":"' nm_JsonEscapeStr(text) '"}'
+	OutputDebug "[ahk] send patternText " name " (" StrLen(text) " chars)"
+	try MyWindow.PostWebMessageAsString(msg)
+}
+
+; Push the live list of installed pattern names to the web Gather dropdown, so the
+; dropdown is driven by \patterns\ instead of the static list baked into index.html.
+; Sent on init (see SendBootstrapState) and whenever the web asks with
+; {"type":"patternListRequest"}.
+nm_WebSendPatternList() {
+	global MyWindow, patternlist
+	if !IsSet(MyWindow)
+		return
+	list := IsSet(patternlist) ? patternlist : []
+	msg := '{"type":"patternList","patterns":' JSON.stringify(list) '}'
+	OutputDebug "[ahk] send patternList (" list.Length " patterns)"
+	try MyWindow.PostWebMessageAsString(msg)
+}
+
+; Minimal JSON string escaper for a value embedded in a hand-built message (the
+; backslash MUST be replaced first). Kept explicit instead of relying on a
+; Stringify() helper so the escape rules are obvious and self-contained.
+nm_JsonEscapeStr(s) {
+	s := StrReplace(s, "\", "\\")
+	s := StrReplace(s, '"', '\"')
+	s := StrReplace(s, "`r", "\r")
+	s := StrReplace(s, "`n", "\n")
+	s := StrReplace(s, "`t", "\t")
+	return s
 }
 
 WebUpdateState(payload) {
@@ -395,6 +530,20 @@ WebUpdateState(payload) {
 	global KillCocoCrabEnabled
 	global KillCommandoChickEnabled, KillCommandoChickLevel, KillCommandoChickHP, KillCommandoChickTime
 	global KillStumpSnailEnabled, KillStumpSnailHP, KillStumpSnailAmuletAction, KillStumpSnailTime
+	; Boost tab (web -> classic). Without these declarations the assignments further down
+	; only created function-local copies, so the real globals never changed and the
+	; classic GUI / macro never saw the web-side edits.
+	global FieldBooster1, FieldBooster2, FieldBooster3, FieldBoosterMins, BoostChaserCheck
+	global AutoFieldBoostActive, AutoFieldBoostRefresh, SprinklerType
+	global HotbarWhile2, HotbarWhile3, HotbarWhile4, HotbarWhile5, HotbarWhile6, HotbarWhile7
+	global HotbarTime2, HotbarTime3, HotbarTime4, HotbarTime5, HotbarTime6, HotbarTime7
+	global BlueFlowerBoosterCheck, BambooBoosterCheck, PineTreeBoosterCheck, DandelionBoosterCheck
+	global SunflowerBoosterCheck, CloverBoosterCheck, SpiderBoosterCheck, PineappleBoosterCheck
+	global CactusBoosterCheck, PumpkinBoosterCheck, MushroomBoosterCheck, StrawberryBoosterCheck
+	global RoseBoosterCheck, PepperBoosterCheck, StumpBoosterCheck, CoconutBoosterCheck
+	global StickerStackCheck, StickerStackMode, StickerStackTimer, StickerStackItem
+	global StickerStackHive, StickerStackCub, StickerStackVoucher
+	global StickerPrinterCheck, StickerPrinterEgg
 	try {
 		data := JSON.parse(payload)
 	} catch {
@@ -408,29 +557,30 @@ WebUpdateState(payload) {
 			try {
 				fields := data["fields"]
 				if IsSet(fields) {
-					if (fields.Length >= 1 && fields[1]) {
-						newName := nm_FormatFieldName(fields[1])
-						if IsSet(FieldName1) {
-							FieldName1 := newName
+					; Add / change fields. nm_UpdateGUIVar() mirrors the value into the classic GUI
+					; and (for FieldNameN) runs nm_FieldSelectN, which enables the per-field controls
+					; and applies the field's defaults. Without it, adding/renaming a field in the web
+					; GUI only changed the global + INI while the classic Gather tab stayed disabled.
+					loop 3 {
+						n := A_Index
+						vname := "FieldName" n
+						if (fields.Length >= n && fields[n]) {
+							newName := nm_FormatFieldName(fields[n])
+							if (!IsSet(%vname%) || (%vname% != newName)) {
+								try %vname% := newName
+								try IniWrite newName, "settings\nm_config.ini", "Gather", vname
+								try nm_UpdateGUIVar(vname)
+							}
+						} else if (n >= 2) {
+							; A field removed in the web GUI has to be cleared in the classic GUI too,
+							; otherwise FieldName2/3 keep a stale copy of FieldName1. Field 1 is never
+							; cleared because its classic DropDownList has no "None" entry.
+							if (!IsSet(%vname%) || (%vname% != "None")) {
+								try %vname% := "None"
+								try IniWrite "None", "settings\nm_config.ini", "Gather", vname
+								try nm_UpdateGUIVar(vname)
+							}
 						}
-						try MainGui["FieldName1"].Text := newName
-						try IniWrite newName, "settings\nm_config.ini", "Gather", "FieldName1"
-					}
-					if (fields.Length >= 2 && fields[2]) {
-						newName := nm_FormatFieldName(fields[2])
-						if IsSet(FieldName2) {
-							FieldName2 := newName
-						}
-						try MainGui["FieldName2"].Text := newName
-						try IniWrite newName, "settings\nm_config.ini", "Gather", "FieldName2"
-					}
-					if (fields.Length >= 3 && fields[3]) {
-						newName := nm_FormatFieldName(fields[3])
-						if IsSet(FieldName3) {
-							FieldName3 := newName
-						}
-						try MainGui["FieldName3"].Text := newName
-						try IniWrite newName, "settings\nm_config.ini", "Gather", "FieldName3"
 					}
 				}
 			}
@@ -440,56 +590,75 @@ WebUpdateState(payload) {
 			num := data["num"], key := data["key"], value := data["value"]
 			if (num = 1) {
 				switch key {
-					case "pattern": FieldPattern1 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldPattern1", MainGui["FieldPattern1"].Text := value
-					case "size": FieldPatternSize1 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldPatternSize1"
-					case "reps": FieldPatternReps1 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldPatternReps1"
-					case "drift": FieldDriftCheck1 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldDriftCheck1"
-					case "shift": FieldPatternShift1 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldPatternShift1"
-					case "invertfb": FieldPatternInvertFB1 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldPatternInvertFB1"
-					case "invertlr": FieldPatternInvertLR1 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldPatternInvertLR1"
-					case "rotdir": FieldRotateDirection1 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldRotateDirection1"
-					case "rottime": FieldRotateTimes1 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldRotateTimes1"
-					case "mins": FieldUntilMins1 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldUntilMins1"
-					case "pack": FieldUntilPack1 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldUntilPack1"
-					case "return": FieldReturnType1 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldReturnType1"
-					case "sprinkloc": FieldSprinklerLoc1 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldSprinklerLoc1"
-					case "sprdist": FieldSprinklerDist1 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldSprinklerDist1"
+					case "pattern": FieldPattern1 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldPattern1"), MainGui["FieldPattern1"].Text := value
+					case "size": FieldPatternSize1 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldPatternSize1")
+					case "reps": FieldPatternReps1 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldPatternReps1")
+					case "drift": FieldDriftCheck1 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldDriftCheck1")
+					case "shift": FieldPatternShift1 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldPatternShift1")
+					case "invertfb": FieldPatternInvertFB1 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldPatternInvertFB1")
+					case "invertlr": FieldPatternInvertLR1 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldPatternInvertLR1")
+					case "rotdir": FieldRotateDirection1 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldRotateDirection1")
+					case "rottime": FieldRotateTimes1 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldRotateTimes1")
+					case "mins": FieldUntilMins1 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldUntilMins1")
+					case "pack": FieldUntilPack1 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldUntilPack1")
+					case "return": FieldReturnType1 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldReturnType1")
+					case "sprinkloc": FieldSprinklerLoc1 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldSprinklerLoc1")
+					case "sprdist": FieldSprinklerDist1 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldSprinklerDist1")
 				}
 			}
 			else if (num = 2) {
 				switch key {
-					case "pattern": FieldPattern2 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldPattern2", MainGui["FieldPattern2"].Text := value
-					case "size": FieldPatternSize2 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldPatternSize2"
-					case "reps": FieldPatternReps2 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldPatternReps2"
-					case "drift": FieldDriftCheck2 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldDriftCheck2"
-					case "shift": FieldPatternShift2 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldPatternShift2"
-					case "invertfb": FieldPatternInvertFB2 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldPatternInvertFB2"
-					case "invertlr": FieldPatternInvertLR2 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldPatternInvertLR2"
-					case "rotdir": FieldRotateDirection2 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldRotateDirection2"
-					case "rottime": FieldRotateTimes2 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldRotateTimes2"
-					case "mins": FieldUntilMins2 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldUntilMins2"
-					case "pack": FieldUntilPack2 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldUntilPack2"
-					case "return": FieldReturnType2 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldReturnType2"
-					case "sprinkloc": FieldSprinklerLoc2 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldSprinklerLoc2"
-					case "sprdist": FieldSprinklerDist2 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldSprinklerDist2"
+					case "pattern": FieldPattern2 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldPattern2"), MainGui["FieldPattern2"].Text := value
+					case "size": FieldPatternSize2 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldPatternSize2")
+					case "reps": FieldPatternReps2 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldPatternReps2")
+					case "drift": FieldDriftCheck2 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldDriftCheck2")
+					case "shift": FieldPatternShift2 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldPatternShift2")
+					case "invertfb": FieldPatternInvertFB2 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldPatternInvertFB2")
+					case "invertlr": FieldPatternInvertLR2 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldPatternInvertLR2")
+					case "rotdir": FieldRotateDirection2 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldRotateDirection2")
+					case "rottime": FieldRotateTimes2 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldRotateTimes2")
+					case "mins": FieldUntilMins2 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldUntilMins2")
+					case "pack": FieldUntilPack2 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldUntilPack2")
+					case "return": FieldReturnType2 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldReturnType2")
+					case "sprinkloc": FieldSprinklerLoc2 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldSprinklerLoc2")
+					case "sprdist": FieldSprinklerDist2 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldSprinklerDist2")
 				}
 			}
 			else if (num = 3) {
 				switch key {
-					case "pattern": FieldPattern3 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldPattern3", MainGui["FieldPattern3"].Text := value
-					case "size": FieldPatternSize3 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldPatternSize3"
-					case "reps": FieldPatternReps3 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldPatternReps3"
-					case "drift": FieldDriftCheck3 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldDriftCheck3"
-					case "shift": FieldPatternShift3 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldPatternShift3"
-					case "invertfb": FieldPatternInvertFB3 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldPatternInvertFB3"
-					case "invertlr": FieldPatternInvertLR3 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldPatternInvertLR3"
-					case "rotdir": FieldRotateDirection3 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldRotateDirection3"
-					case "rottime": FieldRotateTimes3 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldRotateTimes3"
-					case "mins": FieldUntilMins3 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldUntilMins3"
-					case "pack": FieldUntilPack3 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldUntilPack3"
-					case "return": FieldReturnType3 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldReturnType3"
-					case "sprinkloc": FieldSprinklerLoc3 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldSprinklerLoc3"
-					case "sprdist": FieldSprinklerDist3 := value, IniWrite value, "settings\nm_config.ini", "Gather", "FieldSprinklerDist3"
+					case "pattern": FieldPattern3 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldPattern3"), MainGui["FieldPattern3"].Text := value
+					case "size": FieldPatternSize3 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldPatternSize3")
+					case "reps": FieldPatternReps3 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldPatternReps3")
+					case "drift": FieldDriftCheck3 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldDriftCheck3")
+					case "shift": FieldPatternShift3 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldPatternShift3")
+					case "invertfb": FieldPatternInvertFB3 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldPatternInvertFB3")
+					case "invertlr": FieldPatternInvertLR3 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldPatternInvertLR3")
+					case "rotdir": FieldRotateDirection3 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldRotateDirection3")
+					case "rottime": FieldRotateTimes3 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldRotateTimes3")
+					case "mins": FieldUntilMins3 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldUntilMins3")
+					case "pack": FieldUntilPack3 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldUntilPack3")
+					case "return": FieldReturnType3 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldReturnType3")
+					case "sprinkloc": FieldSprinklerLoc3 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldSprinklerLoc3")
+					case "sprdist": FieldSprinklerDist3 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldSprinklerDist3")
+				}
+			}
+
+			; Mirror the new value into the classic GUI (web -> classic), and cover the
+			; per-field keys the hand-written cases above don't handle
+			; (rotdir / sprinkloc / sprdist). Re-writing the global + INI is harmless.
+			if (num >= 1 && num <= 3) {
+				gmap := Map("pattern", "FieldPattern"
+					, "size", "FieldPatternSize", "reps", "FieldPatternReps"
+					, "drift", "FieldDriftCheck", "shift", "FieldPatternShift"
+					, "invertfb", "FieldPatternInvertFB", "invertlr", "FieldPatternInvertLR"
+					, "rotdir", "FieldRotateDirection", "rottime", "FieldRotateTimes"
+					, "mins", "FieldUntilMins", "pack", "FieldUntilPack", "return", "FieldReturnType"
+					, "sprinkloc", "FieldSprinklerLoc", "sprdist", "FieldSprinklerDist")
+				if gmap.Has(key) {
+					vname := gmap[key] num
+					try %vname% := value
+					try IniWrite value, "settings\nm_config.ini", "Gather", vname
+					try nm_UpdateGUIVar(vname)
 				}
 			}
 
@@ -565,6 +734,31 @@ WebUpdateState(payload) {
 				GlueDisCheck := value ? 1 : 0
 				IniWrite GlueDisCheck, "settings\nm_config.ini", "Collect", "GlueDisCheck"
 				try MainGui["GlueDisCheck"].Value := GlueDisCheck
+			}
+			; --- Blender slots (item / amount / repeat) ---
+			; NOTE the prefix lengths: "BlenderItem"=11, "BlenderIndex"=12, "BlenderAmount"=13.
+			; (These used to be off by one, so amount/index never matched and fell through to
+			; the generic branch, writing them into the wrong INI section.)
+			else if (SubStr(key, 1, 11) = "BlenderItem") {
+				nm_WebApplySetting("Blender", key, nm_WebBlenderItemFromWeb(value))
+			}
+			else if (SubStr(key, 1, 13) = "BlenderAmount" || SubStr(key, 1, 12) = "BlenderIndex") {
+				nm_WebApplySetting("Blender", key, value)
+			}
+			; --- Wind Shrine slots ---
+			else if (SubStr(key, 1, 10) = "ShrineItem") {
+				nm_WebApplySetting("Shrine", key, nm_WebBlenderItemFromWeb(value))
+			}
+			else if (SubStr(key, 1, 12) = "ShrineAmount" || SubStr(key, 1, 11) = "ShrineIndex") {
+				nm_WebApplySetting("Shrine", key, value)
+			}
+			; --- Beesmas + Memory Match checkboxes ---
+			else if (key = "BeesmasGatherInterruptCheck" || key = "StockingsCheck" || key = "WreathCheck" || key = "FeastCheck" || key = "RBPDelevelCheck" || key = "GingerbreadCheck" || key = "SnowMachineCheck" || key = "CandlesCheck" || key = "SamovarCheck" || key = "LidArtCheck" || key = "GummyBeaconCheck" || key = "NormalMemoryMatchCheck" || key = "MegaMemoryMatchCheck" || key = "ExtremeMemoryMatchCheck") {
+				nm_WebApplySetting("Collect", key, value ? 1 : 0)
+			}
+			else {
+				; everything else persists generically into the Collect section
+				nm_WebApplySetting("Collect", key, value)
 			}
 
 		case "kill":
@@ -991,6 +1185,24 @@ WebUpdateState(payload) {
 				IniWrite AutoFieldBoostRefresh, "settings\nm_config.ini", "Boost", "AutoFieldBoostRefresh"
 				SendBoostMessage(key, value)
 			}
+			; --- Hotbar slots (2-7) + sprinkler (slot 1) ---
+			else if (SubStr(key, 1, 11) = "HotbarWhile" || SubStr(key, 1, 10) = "HotbarTime") {
+				nm_WebApplySetting("Boost", key, value)
+			}
+			else if (key = "SprinklerType") {
+				nm_WebApplySetting("Settings", key, value)
+			}
+			; The Sticker Printer controls are shown on the web Boost tab, but the
+			; setting itself is stored in the [Collect] section like the classic GUI.
+			else if (key = "StickerPrinterCheck" || key = "StickerPrinterEgg") {
+				nm_WebApplySetting("Collect", key, value)
+			}
+			else {
+				; everything else persists generically into the Boost section
+				nm_WebApplySetting("Boost", key, value)
+			}
+			; mirror boosted-gather-field checkboxes into the classic floating window
+			nm_WebMirrorBoostedFieldGui(key)
 		case "killSettings":
 			OutputDebug "[ahk] recv killSettings"
 			try {
@@ -1128,8 +1340,122 @@ WebUpdateState(payload) {
 			; Broadcast the updated state to both UIs (bidirectional sync)
 			OutputDebug "[ahk] Broadcasting updated kill settings to all UIs"
 			SendBootstrapState()
-	}
-}
+	
+		case "plants":
+		key := data["key"], value := data["value"]
+		OutputDebug "[ahk] recv plants " key "=" value
+		if (key = "Field") {
+			; PlanterPlant1/2/3 mapping
+			num := StrReplace(key, "Field")
+			varName := "PlanterPlant" num
+			try {
+				%varName% := value
+				IniWrite value, "settings\nm_config.ini", "Plants", "PlanterPlant" num
+				try MainGui["PlanterPlant" num "Tab"].Text := value
+			}
+		}
+		else if (key = "Flower") {
+			num := StrReplace(key, "Flower")
+			varName := "PlanterFlower" num
+			try {
+				%varName% := value
+				IniWrite value, "settings\nm_config.ini", "Plants", "PlanterFlower" num
+				try MainGui["PlanterFlower" num "Tab"].Text := value
+			}
+		}
+		else {
+			; All web planters settings are persisted in the Planters section.
+			nm_WebApplySetting("Planters", key, value)
+		}
+
+	case "quests":
+		key := data["key"], value := data["value"]
+		OutputDebug "[ahk] recv quests " key "=" value
+		if (key = "Field") {
+			num := StrReplace(key, "Field")
+			varName := "QuestField" num
+			try {
+				%varName% := value
+				IniWrite value, "settings\nm_config.ini", "Quests", "QuestField" num
+				try MainGui["QuestField" num "Tab"].Text := value
+			}
+		}
+		else if (key = "Loot") {
+			num := StrReplace(key, "Loot")
+			varName := "QuestLoot" num
+			try {
+				%varName% := value
+				IniWrite value, "settings\nm_config.ini", "Quests", "QuestLoot" num
+				try MainGui["QuestLoot" num "Tab"].Text := value
+			}
+		}
+		else if (key = "MondoLoot") {
+			num := StrReplace(key, "MondoLoot")
+			varName := "QuestMondoLoot" num
+			try {
+				%varName% := value
+				IniWrite value, "settings\nm_config.ini", "Quests", "QuestMondoLoot" num
+				try MainGui["QuestMondoLoot" num "Tab"].Text := value
+			}
+		}
+		else if (key = "MondoAction") {
+			num := StrReplace(key, "MondoAction")
+			varName := "QuestMondoAction" num
+			try {
+				%varName% := value
+				IniWrite value, "settings\nm_config.ini", "Quests", "QuestMondoAction" num
+				try MainGui["QuestMondoAction" num "Tab"].Text := value
+			}
+		}
+		else if (key = "GatherPlanterLoot") {
+			num := StrReplace(key, "GatherPlanterLoot")
+			varName := "QuestGatherPlanterLoot" num
+			try {
+				%varName% := value ? 1 : 0
+				IniWrite %varName%, "settings\nm_config.ini", "Quests", "QuestGatherPlanterLoot" num
+				try MainGui["QuestGatherPlanterLoot" num "Tab"].Value := %varName%
+			}
+		}
+		else {
+			; All web quests settings are persisted in the Quests section.
+			nm_WebApplySetting("Quests", key, value)
+		}
+
+
+	case "gather":
+		key := data["key"], value := data["value"]
+		OutputDebug "[ahk] recv gather " key "=" value
+		nm_WebApplySetting("Gather", key, value)
+
+	case "patternRequest":
+		nm_WebSendPatternText(data.Has("key") ? data["key"] : "")
+	case "patternListRequest":
+		OutputDebug "[ahk] recv patternListRequest"
+		nm_WebSendPatternList()
+
+	case "status":
+		key := data["key"], value := data["value"]
+		OutputDebug "[ahk] recv status " key "=" value
+		nm_WebApplySetting("Status", key, value)
+		; Discord integration values must also be pushed to the Status submacro.
+		nm_WebNotifyDiscord(key)
+
+	case "settings":
+		key := data["key"], value := data["value"]
+		OutputDebug "[ahk] recv settings " key "=" value
+		nm_WebApplySetting("Settings", key, value)
+
+	case "misc":
+		key := data["key"], value := data["value"]
+		OutputDebug "[ahk] recv misc " key "=" value
+		nm_WebApplyMiscSetting(key, value)
+
+	case "tab":
+		; web sidebar tab clicked -> switch the classic GUI tab
+		nm_WebSelectClassicTab(data["value"])
+
+	       }
+    }
 
 FormSubmitEvent(source, form) {
     if (source = "webpage") {
@@ -1149,7 +1475,7 @@ FormSubmitEvent(source, form) {
 ;
 ; push a minimal snapshot of AHK state into the WebView so the Bootstrap UI can mirror defaults
 SendBootstrapState() {
-	global MyWindow, FieldName1, FieldName2, FieldName3, FieldPattern1, FieldPattern2, FieldPattern3
+	global MyWindow, VersionID, FieldName1, FieldName2, FieldName3, FieldPattern1, FieldPattern2, FieldPattern3
 	global FieldPatternSize1, FieldPatternSize2, FieldPatternSize3, FieldPatternReps1, FieldPatternReps2, FieldPatternReps3
 	global FieldDriftCheck1, FieldDriftCheck2, FieldDriftCheck3, FieldPatternShift1, FieldPatternShift2, FieldPatternShift3
 	global FieldPatternInvertFB1, FieldPatternInvertFB2, FieldPatternInvertFB3, FieldPatternInvertLR1, FieldPatternInvertLR2, FieldPatternInvertLR3
@@ -1157,6 +1483,10 @@ SendBootstrapState() {
 	global FieldUntilMins1, FieldUntilMins2, FieldUntilMins3, FieldUntilPack1, FieldUntilPack2, FieldUntilPack3
 	global FieldReturnType1, FieldReturnType2, FieldReturnType3, FieldSprinklerLoc1, FieldSprinklerLoc2, FieldSprinklerLoc3
 	global FieldSprinklerDist1, FieldSprinklerDist2, FieldSprinklerDist3
+	; Names of every pattern currently in \patterns\ (filled in by nm_importPatterns);
+	; pushed to the web Gather dropdown so it can learn about patterns added after the
+	; page first loaded.
+	global patternlist
 	global ClockCheck, MondoBuffCheck, MondoAction, MondoLootDirection, AntPassCheck, RoboPassCheck, HoneystormCheck, HoneyDisCheck
 	global TreatDisCheck, BlueberryDisCheck, StrawberryDisCheck, CoconutDisCheck, RoyalJellyDisCheck, GlueDisCheck
 	global KillBugRunGatherInterrupt, KillBugRunRespawnTime, KillLadybugsMode, KillRhinoBeetlesMode, KillSpiderMode, KillMantisMode, KillScorpionsMode, KillWerewolfMode
@@ -1167,6 +1497,10 @@ SendBootstrapState() {
 	global KillCocoCrabEnabled
 	global KillCommandoChickEnabled, KillCommandoChickLevel, KillCommandoChickHP, KillCommandoChickTime
 	global KillStumpSnailEnabled, KillStumpSnailHP, KillStumpSnailAmuletAction, KillStumpSnailTime
+	; NavigationCompleted can fire before nm_importConfig has populated the globals;
+	; the -1000 ms timer set after nm_importConfig guarantees a later (valid) send.
+	if !IsSet(FieldName1)
+		return
 	appVersion := "2025-12-30T" A_Hour ":" A_Min ":" A_Sec
 	try {
 		; coerce numeric fields to 0 when blank
@@ -1262,11 +1596,867 @@ SendBootstrapState() {
 		kill := '{"bugRun":{"allowGatherInterrupt":' kBugRunGatherInt ',"respawnTime":' kBugRunRespawnTime ',"loot":{"ladybugs":"' kLadybugsMode '","rhinoBeetles":"' kRhinoBeetlesMode '","spider":"' kSpiderMode '","mantis":"' kMantisMode '","scorpions":"' kScorpionsMode '","werewolf":"' kWerewolfMode '"}},"stingers":{"killViciousBee":' kViciousBeeEnabled ',"onlyDaily":' kViciousBeeOnlyDaily ',"fields":{"clover":' kVBFieldClover ',"spider":' kVBFieldSpider ',"cactus":' kVBFieldCactus ',"rose":' kVBFieldRose ',"mountainTop":' kVBFieldMountainTop ',"pepper":' kVBFieldPepper '}},"bosses":{"kingBeetle":{"enabled":' kKBEnabled ',"waitBabyLove":' kKBWaitBabyLove ',"amuletAction":"' kKBAmuletAction '"},"tunnelBear":{"enabled":' kTBEnabled ',"waitBabyLove":' kTBWaitBabyLove '},"cocoCrab":{"enabled":' kCCEnabled '},"commandoChick":{"enabled":' kCCHEnabled ',"level":' kCCHLevel ',"hp":' kCCHHP ',"time":"' kCCHTime '"},"stumpSnail":{"enabled":' kSSEnabled ',"hp":' kSSHP ',"amuletAction":"' kSSAmuletAction '","time":"' kSSTime '"}}}'
 		OutputDebug "[ahk] kill payload: " kill
 		
-		; build full init JSON manually
-		json := '{"type":"init","version":"' appVersion '","gather":[' f1 ',' f2 ',' f3 '],"collect":' col ',"kill":' kill '}'
-		OutputDebug "[ahk] send init: " json
-		MyWindow.PostWebMessageAsString(json)
+		; build full init JSON (extra tabs serialised from the catalog snapshot).
+		; NOTE: do NOT name a local `json` here — identifiers are case-insensitive and
+		; it would shadow the JSON class, breaking JSON.stringify.
+		snap := nm_WebSnapshot()
+		initJson := '{"type":"init","version":"' appVersion '","natroVersion":"' VersionID '","gather":[' f1 ',' f2 ',' f3 '],"collect":' col ',"kill":' kill
+			. ',"boost":' JSON.stringify(snap["Boost"])
+			. ',"plants":' JSON.stringify(snap["Planters"])
+			. ',"quests":' JSON.stringify(snap["Quests"])
+			. ',"settings":' JSON.stringify(snap["Settings"])
+			. ',"status":' JSON.stringify(snap["Status"])
+			. ',"misc":' JSON.stringify(snap["misc"])
+			. ',"blender":' JSON.stringify(snap["Blender"])
+			. ',"shrine":' JSON.stringify(snap["Shrine"])
+			. ',"gatherSettings":' JSON.stringify(snap["Gather"])
+			. ',"collectExtras":' JSON.stringify(snap["Collect"])
+			. ',"patternList":' JSON.stringify(patternlist) '}'
+		OutputDebug "[ahk] send init: " initJson
+		MyWindow.PostWebMessageAsString(initJson)
+		; keep the web sidebar in step with the classic tab selection on first paint
+		try nm_WebBroadcastTab(nm_ClassicTabToWeb())
+	} catch as e {
+		OutputDebug "[ahk] init error: " e.Message
 	}
+}
+
+;///////////////////////////////////////////////////////////////////////////////////////////
+; Bootstrap web bridge - snapshot / apply / broadcast (web GUI <-> classic GUI sync)
+;///////////////////////////////////////////////////////////////////////////////////////////
+
+; Apply the web GUI's own upper-left logo as this window's native icon (title bar, Alt+Tab
+; and taskbar). The logo is a PNG while WM_SETICON needs an HICON, so convert it via GDI+
+; (LoadPicture cannot feed a PNG straight to WM_SETICON).
+nm_ApplyWebWindowIcon() {
+	global MyWindow, pToken
+	if (!IsSet(pToken) || !IsSet(MyWindow))
+		return
+	path := A_WorkingDir "\BootstrapGUI\assets\img\misc\NatroRedLogo.png"
+	if !FileExist(path)
+		path := A_ScriptDir "\..\BootstrapGUI\assets\img\misc\NatroRedLogo.png"
+	if !FileExist(path)
+		return
+	; WM_SETICON: wParam 0 = ICON_SMALL (title bar), 1 = ICON_BIG (Alt+Tab / taskbar).
+	; Render each at its native size so Windows never has to stretch a single bitmap.
+	hSmall := nm_HIconFromPng(path, 16)
+	hBig := nm_HIconFromPng(path, 32)
+	if (hSmall >= 1)
+		DllCall("SendMessage", "Ptr", MyWindow.Hwnd, "UInt", 0x0080, "Ptr", 0, "Ptr", hSmall, "Ptr", 0)
+	if (hBig >= 1)
+		DllCall("SendMessage", "Ptr", MyWindow.Hwnd, "UInt", 0x0080, "Ptr", 1, "Ptr", hBig, "Ptr", 0)
+}
+
+; Render a PNG at the given square size and return an HICON (0 on failure).
+nm_HIconFromPng(path, size) {
+	global pToken
+	if !IsSet(pToken)
+		return 0
+	pSrc := Gdip_CreateBitmapFromFile(path)
+	if (pSrc < 1)
+		return 0
+	pDst := Gdip_CreateBitmap(size, size)
+	if (pDst < 1) {
+		Gdip_DisposeImage(pSrc)
+		return 0
+	}
+	G := Gdip_GraphicsFromImage(pDst)
+	Gdip_SetInterpolationMode(G, 7) ; HighQualityBicubic
+	Gdip_DrawImage(G, pSrc, 0, 0, size, size)
+	Gdip_DeleteGraphics(G)
+	Gdip_DisposeImage(pSrc)
+	hIcon := Gdip_CreateHICONFromBitmap(pDst)
+	Gdip_DisposeImage(pDst)
+	return (hIcon >= 1) ? hIcon : 0
+}
+
+nm_WebSnapshot() {
+	global
+	local m, bm, pm, cm, sm, stm, mm, k, i, f, n, sec, cat, _v, kind, j, mpm, _, asm
+	m := Map()
+
+	; ---- Boost / hotbar ----
+	bm := Map()
+	bm["FieldBooster1"] := FieldBooster1
+	bm["FieldBooster2"] := FieldBooster2
+	bm["FieldBooster3"] := FieldBooster3
+	bm["FieldBoosterMins"] := (FieldBoosterMins = "") ? 0 : FieldBoosterMins
+	bm["BoostChaserCheck"] := (BoostChaserCheck = "") ? 0 : BoostChaserCheck
+	bm["AutoFieldBoostActive"] := (AutoFieldBoostActive = "") ? 0 : AutoFieldBoostActive
+	bm["AutoFieldBoostRefresh"] := (AutoFieldBoostRefresh = "") ? 12.5 : AutoFieldBoostRefresh
+	bm["SprinklerType"] := SprinklerType
+	for _, f in ["BlueFlower","Bamboo","PineTree","Dandelion","Sunflower","Clover","Spider","Pineapple","Cactus","Pumpkin","Mushroom","Strawberry","Rose","Pepper","Stump","Coconut"] {
+		k := f "BoosterCheck"
+		try {
+			bm[k] := %k%
+		}
+	}
+	loop 6 {
+		i := A_Index + 1
+		k := "HotbarWhile" i
+		try {
+			bm[k] := %k%
+		}
+		k := "HotbarTime" i
+		try {
+			bm[k] := (%k% = "") ? 0 : %k%
+		}
+	}
+	m["boost"] := bm
+
+	; ---- Planters ----
+	pm := Map()
+	pm["PlanterMode"] := (PlanterMode = "") ? 0 : PlanterMode
+	pm["NectarPreset"] := (nPreset = "") ? "Blue" : nPreset
+	pm["MaxAllowedPlanters"] := (MaxAllowedPlanters = "") ? 3 : MaxAllowedPlanters
+	pm["HarvestInterval"] := (HarvestInterval = "") ? 2 : HarvestInterval
+	pm["AutomaticHarvestInterval"] := (AutomaticHarvestInterval = "") ? 0 : AutomaticHarvestInterval
+	pm["HarvestFullGrown"] := (HarvestFullGrown = "") ? 0 : HarvestFullGrown
+	pm["HarvestMode"] := HarvestFullGrown ? "Full" : (AutomaticHarvestInterval ? "Auto" : "Timed")
+	pm["ConvertFullBagHarvest"] := (ConvertFullBagHarvest = "") ? 0 : ConvertFullBagHarvest
+	pm["GatherPlanterLoot"] := (GatherPlanterLoot = "") ? 1 : GatherPlanterLoot
+	loop 3 {
+		i := A_Index
+		for _, pre in ["MPlanterGather","PlanterManualCycle","PlanterHarvestFull"] {
+			k := pre i
+			try {
+				pm[k] := %k%
+			}
+		}
+	}
+	loop 5 {
+		i := A_Index
+		k := "n" i "priority"
+		try {
+			pm[k] := %k%
+		}
+		k := "n" i "minPercent"
+		try {
+			pm[k] := (%k% = "") ? 0 : %k%
+		}
+	}
+	for _, n in ["Plastic","Candy","BlueClay","RedClay","Tacky","Pesticide","HeatTreated","Hydroponic","Petal","PlanterOfPlenty","Paper","Ticket"] {
+		k := n "PlanterCheck"
+		try {
+			pm[k] := %k%
+		}
+	}
+	for _, n in ["Bamboo","BlueFlower","Cactus","Clover","Coconut","Dandelion","MountainTop","Mushroom","Pepper","PineTree","Pineapple","Pumpkin","Rose","Spider","Strawberry","Stump","Sunflower"] {
+		k := n "FieldCheck"
+		try {
+			pm[k] := %k%
+		}
+	}
+	m["plants"] := pm
+
+	; ---- Quests ----
+	qm := Map()
+	for _, k in ["QuestGatherMins","QuestGatherReturnBy","QuestBoostCheck","PolarQuestCheck","PolarQuestGatherInterruptCheck","HoneyQuestCheck","BlackQuestCheck","BrownQuestCheck","BuckoQuestCheck","BuckoQuestGatherInterruptCheck","RileyQuestCheck","RileyQuestGatherInterruptCheck"] {
+		try {
+			qm[k] := %k%
+		}
+	}
+	m["quests"] := qm
+
+	; ---- Settings ----
+	sm := Map()
+	for _, k in ["AlwaysOnTop","GuiTheme","GuiTransparency","KeyDelay","HiveSlot","HiveBees","ClaimMethod","ReconnectMethod","PrivServer","ReconnectInterval","ReconnectHour","ReconnectMin","PublicFallback","MoveSpeedNum","NewWalk","MoveMethod","SprinklerType","ConvertBalloon","ConvertMins","DisableToolUse","ReleaseChannel","FallbackServer1","FallbackServer2","FallbackServer3","AnnounceGuidingStar","HideErrors"] {
+		try {
+			sm[k] := %k%
+		}
+	}
+	m["settings"] := sm
+
+	; ---- Status ----
+	stm := Map()
+	for _, k in ["StatusLogReverse","ssCheck","ssDebugging","DiscordMode","Webhook","BotToken","MainChannelID","ReportChannelID","DebugLogEnabled","TotalRuntime","SessionRuntime","TotalGatherTime","SessionGatherTime","TotalBugKills","SessionBugKills","TotalBossKills","SessionBossKills","TotalViciousKills","SessionViciousKills","TotalQuestsComplete","SessionQuestsComplete","TotalDisconnects","SessionDisconnects"] {
+		try {
+			stm[k] := (%k% = "") ? 0 : %k%
+		}
+	}
+	; Read-only mirror of the classic Status Log so the web Status tab can show it.
+	try stm["__Log"] := MainGui["statuslog"].Text
+	m["status"] := stm
+
+	; ---- Misc (Settings tab tools that live on the web Misc tab) ----
+	mm := Map()
+	for _, k in ["HideErrors","AnnounceGuidingStar","DebugLogEnabled"
+		,"ClickMode","ClickCount","ClickDelay","ClickDuration"
+		,"StartHotkey","PauseHotkey","StopHotkey","AutoClickerHotkey","TimersHotkey","DebugHotkey"
+		,"ShowOnPause","NightAnnouncementCheck","NightAnnouncementName","NightAnnouncementPingID"
+		,"NightAnnouncementWebhook","AutoStartEnabled","AutoStartDelay"] {
+		try {
+			mm[k] := (%k% = "") ? 0 : %k%
+		}
+	}
+	; Auto-start + Roblox FPS values are not persisted in nm_config.ini.
+	try {
+		asm := nm_WebReadAutoStart()
+		mm["AutoStartEnabled"] := asm.enabled
+		mm["AutoStartDelay"] := asm.delay
+	}
+	; Reading Roblox's settings XML is comparatively expensive, so only do it for the
+	; initial snapshot (live changes are echoed back when the web applies them).
+	static fpsSent := 0
+	if !fpsSent {
+		fpsSent := 1
+		try mm["WebFPSCount"] := nm_WebReadFPSCount("Web").fps
+		try mm["UWPFPSCount"] := nm_WebReadFPSCount("UWP").fps
+	}
+	m["misc"] := mm
+
+	; ---- Collect extras (Blender / Wind Shrine / Beesmas / Memory Match) ----
+	cm := Map()
+	loop 3 {
+		i := A_Index
+		try {
+			cm["BlenderItem" i] := nm_WebBlenderItemToWeb(%("BlenderItem" i)%)
+		}
+		try {
+			cm["BlenderAmount" i] := (%("BlenderAmount" i)% = "") ? 0 : %("BlenderAmount" i)%
+		}
+		try {
+			cm["BlenderIndex" i] := %("BlenderIndex" i)%
+		}
+	}
+	loop 2 {
+		i := A_Index
+		try {
+			cm["ShrineItem" i] := nm_WebBlenderItemToWeb(%("ShrineItem" i)%)
+		}
+		try {
+			cm["ShrineAmount" i] := (%("ShrineAmount" i)% = "") ? 0 : %("ShrineAmount" i)%
+		}
+		try {
+			cm["ShrineIndex" i] := %("ShrineIndex" i)%
+		}
+	}
+	for _, k in ["BeesmasGatherInterruptCheck","StockingsCheck","WreathCheck","FeastCheck","RBPDelevelCheck","GingerbreadCheck","SnowMachineCheck","CandlesCheck","SamovarCheck","LidArtCheck","GummyBeaconCheck","NormalMemoryMatchCheck","MegaMemoryMatchCheck","ExtremeMemoryMatchCheck"] {
+		try {
+			cm[k] := (%k% = "") ? 0 : %k%
+		}
+	}
+	m["collect"] := cm
+
+	; ---- Full catalog: every persisted setting, straight from nm_importConfig.
+	; This is a superset of the hand-built sections above, so it guarantees that
+	; nothing is missed for either first paint or live polling.
+	if IsSet(nm_SettingsCatalog) {
+		for sec, cat in nm_SettingsCatalog {
+			sub := Map()
+			for k, _v in cat {
+				try {
+					sub[k] := %k%
+				}
+			}
+			m[sec] := sub
+		}
+	}
+
+	; Runtime-only value (not persisted): lets the web Boost tab render the classic
+	; hotbar descriptive text ("@ Boosted" vs "@ Full Pack", "@ Hive Return", ...).
+	if m.Has("Boost")
+		m["Boost"]["PFieldBoosted"] := (PFieldBoosted = "") ? 0 : PFieldBoosted
+
+	; ---- Manual planter cycles (settings\manual_planters.ini) ----
+	if !m.Has("Planters")
+		m["Planters"] := Map()
+	mpm := m["Planters"]
+	loop 3 {
+		i := A_Index
+		loop 9 {
+			j := A_Index
+			for _, kind in ["Planter","Field","Glitter","AutoFull"] {
+				k := "MSlot" i "Cycle" j kind
+				try {
+					mpm[k] := %k%
+				}
+			}
+		}
+	}
+	; Derived keys (not present in the import catalog).
+	mpm["NectarPreset"] := nPreset
+	mpm["HarvestMode"] := HarvestFullGrown ? "Full" : (AutomaticHarvestInterval ? "Auto" : "Timed")
+
+	; GuiTransparency is stored/applied as 0-70 in steps of 5 (the classic UpDown holds
+	; 0-14, i.e. value * 5). The web control mirrors the *displayed* 0-70 value so its
+	; up/down arrows count exactly the way the classic GUI does.
+	if m.Has("Settings")
+		try m["Settings"]["GuiTransparency"] := (GuiTransparency = "") ? 0 : GuiTransparency
+
+	; ---- Kill settings are stored separately from the import catalog ----
+	km := Map()
+	for _, k in ["KillBugRunGatherInterrupt","KillBugRunRespawnTime","KillLadybugsMode","KillRhinoBeetlesMode","KillSpiderMode","KillMantisMode","KillScorpionsMode","KillWerewolfMode","KillViciousBeeEnabled","KillViciousBeeOnlyDaily","KillViciousBeeFieldClover","KillViciousBeeFieldSpider","KillViciousBeeFieldCactus","KillViciousBeeFieldRose","KillViciousBeeFieldMountainTop","KillViciousBeeFieldPepper","KillKingBeetleEnabled","KillKingBeetleWaitBabyLove","KillKingBeetleAmuletAction","KillTunnelBearEnabled","KillTunnelBearWaitBabyLove","KillCocoCrabEnabled","KillCommandoChickEnabled","KillCommandoChickLevel","KillCommandoChickHP","KillCommandoChickTime","KillStumpSnailEnabled","KillStumpSnailHP","KillStumpSnailAmuletAction","KillStumpSnailTime"] {
+		try {
+			km[k] := %k%
+		}
+	}
+	m["Kill"] := km
+
+	return m
+}
+
+; Poll the AHK state and push any changed values to the web GUI.
+; This keeps the classic GUI -> web GUI direction in sync for every setting,
+; including ones whose classic controls do not route through nm_saveConfig.
+nm_WebSyncTimer() {
+	global MyWindow
+	if !IsSet(MyWindow)
+		return
+	static last := Map()
+	try {
+		snap := nm_WebSnapshot()
+	} catch {
+		return
+	}
+	for section, obj in snap {
+		type := nm_WebTypeForSection(section)
+		for k, v in obj {
+			lk := section "|" k
+			if (!last.Has(lk) || (last[lk] != v)) {
+				last[lk] := v
+				try MyWindow.PostWebMessageAsString(JSON.stringify(Map("type", type, "key", k, "value", v)))
+			}
+		}
+	}
+}
+
+; Map an AHK-style section name to the JS message type.
+nm_WebTypeForSection(section) {
+	switch section, 0 {
+		case "Settings", "settings": return "settings"
+		case "Status", "status": return "status"
+		case "Plants", "Planters", "Planter", "plants": return "plants"
+		case "Quests", "quests": return "quests"
+		case "Collect", "Blender", "Shrine", "collect": return "collect"
+		case "Boost", "boost": return "boost"
+		case "Kill": return "kill"
+		case "Gather", "gather": return "gather"
+		default: return "misc"
+	}
+}
+
+; Push a single setting change (originating in the classic GUI or AHK) to the web GUI.
+nm_WebBroadcastSetting(section, key, value) {
+	global MyWindow
+	if !IsSet(MyWindow)
+		return
+	try MyWindow.PostWebMessageAsString(JSON.stringify(Map("type", nm_WebTypeForSection(section), "key", key, "value", value)))
+}
+
+; Per-field Gather actions coming from the web GUI ("save" / "copy" / "paste").
+; The classic controls (SaveFieldDefault1..3 / CopyGather1..3 / PasteGather1..3) are
+; identified by the trailing field number, so reuse the existing classic handlers.
+WebGatherActionEvent(payload) {
+	try {
+		parts := StrSplit(payload, ":")
+		if (parts.Length >= 2)
+			nm_WebGatherAction(parts[1], Integer(parts[2]))
+	} catch as e {
+		OutputDebug "[ahk] gather action error: " e.Message
+	}
+}
+
+nm_WebGatherAction(action, num) {
+	global MainGui
+	if (num < 1 || num > 3)
+		return
+	switch StrLower(action) {
+		case "save":
+			try nm_SaveFieldDefault(MainGui["SaveFieldDefault" num])
+		case "copy":
+			try nm_CopyGatherSettings(MainGui["CopyGather" num])
+		case "paste":
+			try nm_PasteGatherSettings(MainGui["PasteGather" num])
+	}
+}
+
+;///////////////////////////////////////////////////////////////////////////////////////////
+; Tab sync (web sidebar <-> classic TabCtrl)
+;///////////////////////////////////////////////////////////////////////////////////////////
+; Map a web sidebar id -> classic tab name (used for web -> classic).
+nm_WebSelectClassicTab(webid) {
+	global TabCtrl, MainGui, nm_SubTabKill
+	if !IsSet(TabCtrl) || (webid = "")
+		return
+	static m := Map(
+		"gather", "Gather", "collect", "Collect/Kill", "kill", "Collect/Kill",
+		"boost", "Boost", "quest", "Quests", "planters", "Planters",
+		"status", "Status", "settings", "Settings", "misc", "Misc", "about", "Credits")
+	name := m.Has(webid) ? m[webid] : webid
+	; The web splits the classic "Collect/Kill" tab into "Collect" and "Kill".
+	; Flip the sub-tab BEFORE choosing the tab: `TabCtrl.Choose()` fires the classic
+	; Change event, which broadcasts the tab back and would otherwise report the
+	; stale sub-tab and bounce the web GUI back to Collect.
+	if (webid = "collect" || webid = "kill") {
+		wantKill := (webid = "kill") ? 1 : 0
+		if (!IsSet(nm_SubTabKill) || (nm_SubTabKill != wantKill))
+			try nm_CollectKillButton(MainGui[wantKill ? "KillSubTab" : "CollectSubTab"])
+	}
+	try TabCtrl.Choose(name)
+}
+
+; Map the currently selected classic tab -> web sidebar id (used for classic -> web).
+nm_ClassicTabToWeb() {
+	global TabCtrl, nm_SubTabKill
+	if !IsSet(TabCtrl)
+		return ""
+	i := 0
+	try i := TabCtrl.Value
+	; classic TabArr order: Gather, Collect/Kill, Boost, Quests, Planters, Status, Settings, Misc, Credits, [Advanced]
+	static names := ["gather", "collect", "boost", "quest", "planters", "status", "settings", "misc", "about", "settings"]
+	if (i < 1 || i > names.Length)
+		return ""
+	id := names[i]
+	; The classic "Collect/Kill" tab is split into "Collect" and "Kill" on the web,
+	; so report whichever classic sub-tab is currently showing.
+	if (id = "collect")
+		id := (IsSet(nm_SubTabKill) && nm_SubTabKill) ? "kill" : "collect"
+	return id
+}
+
+nm_WebBroadcastTab(webid) {
+	global MyWindow
+	if !IsSet(MyWindow) || (webid = "")
+		return
+	try MyWindow.PostWebMessageAsString(JSON.stringify(Map("type", "tab", "key", "Tab", "value", webid)))
+}
+
+nm_OnTabChange(*) {
+	global TabCtrl
+	try TabCtrl.Focus()
+	nm_WebBroadcastTab(nm_ClassicTabToWeb())
+}
+
+; Apply a setting that originated in the web GUI: persist, mirror the classic GUI, then echo back.
+nm_WebApplySetting(section, key, value) {
+	global
+	local slot, z, si, sa, sx
+
+	; Blender slots drive the classic Blender card (ingredient picture / Add-Clear
+	; button / "(amount) [repeat]" line). This mirrors the classic `ba_AddBlenderItem`
+	; flow directly instead of relying on nm_UpdateGUIVar()'s `case ""` fallthrough,
+	; whose first statement could throw and silently skip the rest (the caller wraps
+	; nm_UpdateGUIVar in `try`).
+	if (SubStr(key, 1, 11) = "BlenderItem") {
+		try %key% := value
+		try IniWrite value, "settings\nm_config.ini", "Blender", key
+		z := SubStr(key, -1)
+		try MainGui["BlenderItem" z "Picture"].Value := hBitmapsSB[%key%] ? ("HBITMAP:*" hBitmapsSB[%key%]) : ""
+		try MainGui["BlenderAdd" z].Text := ((BlenderItem%z% = "None" || BlenderItem%z% = "") ? "Add" : "Clear")
+		try MainGui["BlenderData" z].Text := "(" BlenderAmount%z% ") [" ((BlenderIndex%z% = "Infinite") ? "∞" : BlenderIndex%z%) "]"
+		nm_WebBroadcastSetting("Blender", key, value)
+		return
+	}
+	if (SubStr(key, 1, 13) = "BlenderAmount" || SubStr(key, 1, 12) = "BlenderIndex") {
+		try %key% := value
+		try IniWrite value, "settings\nm_config.ini", "Blender", key
+		z := SubStr(key, -1)
+		try MainGui["BlenderData" z].Text := "(" BlenderAmount%z% ") [" ((BlenderIndex%z% = "Infinite") ? "∞" : BlenderIndex%z%) "]"
+		nm_WebBroadcastSetting("Blender", key, value)
+		return
+	}
+
+	; Manual planter cycles live in settings\manual_planters.ini (section "Slot N")
+	if (SubStr(key, 1, 5) = "MSlot") {
+		try %key% := value
+		slot := SubStr(key, 6, 1)
+		try IniWrite value, "settings\manual_planters.ini", "Slot " slot, key
+		; Mirror the classic GUI's manual-planter grid (values + enabled state).
+		try mp_UpdateControls()
+		nm_WebBroadcastSetting("Plants", key, value)
+		return
+	}
+
+	; Wind Shrine slots drive the classic Shrine card (item picture / Add-Clear / data).
+	; Self-contained mirror: every dynamic read is individually guarded (a ShrineAmount/
+	; ShrineIndex global may legitimately be unset), so a single missing value can never
+	; abort the whole update or surface as an error to the web caller.
+	if (SubStr(key, 1, 10) = "ShrineItem" || SubStr(key, 1, 12) = "ShrineAmount" || SubStr(key, 1, 11) = "ShrineIndex") {
+		try %key% := value
+		try IniWrite value, "settings\nm_config.ini", "Shrine", key
+		z := SubStr(key, -1)
+		try {
+			si := "", sa := 0, sx := 0
+			try si := ShrineItem%z%
+			try sa := ShrineAmount%z%
+			try sx := ShrineIndex%z%
+			MainGui["ShrineItem" z "Picture"].Value := hBitmapsSB[si] ? ("HBITMAP:*" hBitmapsSB[si]) : ""
+			MainGui["ShrineAdd" z].Text := ((si = "None" || si = "") ? "Add" : "Clear")
+			MainGui["ShrineData" z].Text := "(" sa ") [" ((sx = "Infinite") ? "∞" : sx) "]"
+		}
+		try nm_UpdateGUIVar(key)
+		nm_WebBroadcastSetting("Collect", key, value)
+		return
+	}
+
+	; a couple of friendly value normalisations
+	if (key = "ClaimMethod" && value = "To Slot")
+		value := "ToSlot"
+
+	; GuiTransparency arrives from the web as the displayed 0-70 value (steps of 5); the
+	; classic UpDown holds 0-14 (value // 5). nm_guiTransparencySet() always re-reads the
+	; UpDown control and writes GuiTransparency back (UpDown * 5), so set the control first.
+	if (key = "GuiTransparency") {
+		try MainGui["GuiTransparencyUpDown"].Value := (value = "") ? 0 : Round(value / 5)
+		try nm_guiTransparencySet()
+		nm_WebBroadcastSetting("Settings", key, value)
+		return
+	}
+
+	; Nectar preset is stored in the lowercase `nPreset` global.
+	if (key = "NectarPreset" || key = "nPreset") {
+		nm_WebSetNectarPreset(value)
+		nm_WebBroadcastSetting("Planters", "NectarPreset", value)
+		return
+	}
+	; Harvest mode is a single radio in the web GUI mapping onto 3 classic flags.
+	if (key = "HarvestMode") {
+		HarvestFullGrown := (value = "Full") ? 1 : 0
+		AutomaticHarvestInterval := (value = "Auto") ? 1 : 0
+		try IniWrite HarvestFullGrown, "settings\nm_config.ini", "Planters", "HarvestFullGrown"
+		try IniWrite AutomaticHarvestInterval, "settings\nm_config.ini", "Planters", "AutomaticHarvestInterval"
+		try MainGui["HarvestFullGrown"].Value := HarvestFullGrown
+		try MainGui["AutomaticHarvestInterval"].Value := AutomaticHarvestInterval
+		nm_WebBroadcastSetting("Planters", "HarvestMode", value)
+		return
+	}
+
+	try %key% := value
+	try IniWrite value, "settings\nm_config.ini", section, key
+	try nm_UpdateGUIVar(key)
+
+	try {
+		switch key, 0 {
+			case "AlwaysOnTop": nm_AlwaysOnTop()
+			; Mirror the classic GUI (nm_guiThemeSelect): choosing a theme restarts the
+			; script so the new skin is re-applied to every window, including the WebView
+			; GUI. Deferred with SetTimer so this returns before the host-object call tears
+			; itself down via Reload.
+			case "GuiTheme": SetTimer(() => Reload(), -250)
+			case "GuiTransparency": nm_guiTransparencySet()
+			case "HiveBees": nm_HiveBees(MainGui["HiveBees"])
+			case "KeyDelay": nm_saveKeyDelay()
+			case "PlanterMode": ba_PlanterSwitch()
+			case "NectarPreset": nm_WebSetNectarPreset(value)
+			case "HarvestInterval": ba_harvestInterval()
+			case "ReconnectInterval": nm_setReconnectInterval(MainGui["ReconnectInterval"])
+			case "ReconnectHour": nm_setReconnectHour(MainGui["ReconnectHour"])
+			case "ReconnectMin": nm_setReconnectMin(MainGui["ReconnectMin"])
+			case "MoveSpeedNum": nm_moveSpeed(MainGui["MoveSpeedNum"])
+			case "StatusLogReverse": nm_StatusLogReverseCheck()
+			case "n1priority", "n2priority", "n3priority", "n4priority", "n5priority":
+				try nm_NectarPriority()
+				nPreset := "Custom"
+				try MainGui["nPreset"].Text := "Custom"
+				try IniWrite "Custom", "settings\nm_config.ini", "Planters", "nPreset"
+				nm_WebBroadcastSetting("Planters", "NectarPreset", "Custom")
+			case "n1minPercent", "n2minPercent", "n3minPercent", "n4minPercent", "n5minPercent":
+				try MainGui[key "UpDown"].Value := value // 10
+				nPreset := "Custom"
+				try MainGui["nPreset"].Text := "Custom"
+				try IniWrite "Custom", "settings\nm_config.ini", "Planters", "nPreset"
+				nm_WebBroadcastSetting("Planters", "NectarPreset", "Custom")
+		}
+	}
+
+	nm_WebBroadcastSetting(section, key, value)
+}
+
+; Notify the Status submacro (and natro_macro itself) that a Discord setting
+; changed, mirroring the classic Discord window's post-apply messages.
+nm_WebNotifyDiscord(key) {
+	global
+	static intEnum := Map("DiscordMode", 1
+		, "DiscordCheck", 2
+		, "MainChannelCheck", 3
+		, "ReportChannelCheck", 4
+		, "ssCheck", 6
+		, "CriticalSSCheck", 8
+		, "AmuletSSCheck", 9
+		, "MachineSSCheck", 10
+		, "BalloonSSCheck", 11
+		, "ViciousSSCheck", 12
+		, "DeathSSCheck", 13
+		, "PlanterSSCheck", 14
+		, "HoneySSCheck", 15
+		, "criticalCheck", 16
+		, "CriticalErrorPingCheck", 17
+		, "DisconnectPingCheck", 18
+		, "GameFrozenPingCheck", 19
+		, "PhantomPingCheck", 20
+		, "UnexpectedDeathPingCheck", 21
+		, "EmergencyBalloonPingCheck", 22
+		, "HoneyUpdateSSCheck", 363)
+	static strEnum := Map("Webhook", 1, "BotToken", 2, "MainChannelID", 3, "ReportChannelID", 4, "discordUID", 5, "discordUIDCommands", 80)
+	local k := key, v
+
+	if intEnum.Has(k) {
+		v := %k%
+		if WinExist("natro_macro.ahk ahk_class AutoHotkey")
+			try PostMessage 0x5552, intEnum[k], v
+		if WinExist("Status.ahk ahk_class AutoHotkey")
+			try PostMessage 0x5552, intEnum[k], v
+	} else if strEnum.Has(k) {
+		if WinExist("natro_macro.ahk ahk_class AutoHotkey")
+			try PostMessage 0x5553, strEnum[k], 7
+		if WinExist("Status.ahk ahk_class AutoHotkey")
+			try PostMessage 0x5553, strEnum[k], 7
+	}
+}
+
+; Mirror a boosted-gather-field checkbox into the classic floating
+; "Select Boosted Gather Fields" window, but only if it is currently open.
+nm_WebMirrorBoostedFieldGui(key) {
+	global
+	if (SubStr(key, -12) != "BoosterCheck")
+		return
+	try BoostedFieldSelectGui[key].Value := (%key% = "") ? 0 : %key%
+}
+
+; Read the Natro Macro auto-start registry entry.
+nm_WebReadAutoStart() {
+	global
+	local out := { enabled: 0, delay: 0 }, task := "", args := [], pos := 1, m := ""
+	try task := RegRead("HKCU\Software\Microsoft\Windows\CurrentVersion\Run", "NatroMacro")
+	if (task = "")
+		return out
+	while (pos := RegExMatch(task, '"([^"]*)"', &m, pos)) {
+		args.Push(m[1])
+		pos := m.Pos + m.Len
+	}
+	if (args.Length >= 2 && args[2] = "1")
+		out.enabled := 1
+	if (args.Length >= 4 && IsNumber(args[4]))
+		out.delay := Integer(args[4])
+	return out
+}
+
+; Write (or clear) the Natro Macro auto-start registry entry.
+nm_WebWriteAutoStart(enabled, delay) {
+	global
+	RegWrite '"' A_WorkingDir '\START.bat"'
+		. ((enabled) ? ' "1"' : ' ""')
+		. ' ""'
+		. ((delay > 0) ? ' "' delay '"' : ' ""')
+		, "REG_SZ", "HKCU\Software\Microsoft\Windows\CurrentVersion\Run", "NatroMacro"
+}
+
+; Read a Roblox FPS cap ('Web' or 'UWP').
+nm_WebReadFPSCount(kind) {
+	global
+	; Default to 60 (the Roblox default) when the settings file / cap can't be found,
+	; so the web Misc tab never shows a misleading 0.
+	local fps := 60, xmlpath := "", robloxtype := "", m := ""
+	try {
+		robloxtype := (kind = "UWP") ? RobloxTypes.UWP : RobloxTypes.Web
+		xmlpath := nm_LocateRobloxSettingsXML(robloxtype)
+		if (xmlpath && RegExMatch(FileRead(xmlpath), "<int name=`"FramerateCap`">(-?\d+)</int>", &m))
+			fps := (Integer(m[1]) <= 0) ? 60 : Integer(m[1])
+	}
+	return { fps: fps }
+}
+
+; Apply a new Roblox FPS cap ('Web' or 'UWP').
+nm_WebWriteFPSCount(kind, fps) {
+	global
+	local robloxtype, xmlpath, xml
+	robloxtype := (kind = "UWP") ? RobloxTypes.UWP : RobloxTypes.Web
+	xmlpath := nm_LocateRobloxSettingsXML(robloxtype)
+	if !xmlpath
+		return 0
+	xml := FileRead(xmlpath)
+	xml := RegExReplace(xml, "<int name=`"FramerateCap`">-?\d+</int>", "<int name=`"FramerateCap`">" ((fps = 60) ? "-1" : fps) "</int>")
+	FileDelete xmlpath
+	FileAppend xml, xmlpath
+	return 1
+}
+
+; Apply a setting that originated in the web "Misc" tab. These keys are spread
+; across the [Settings] and [Status] INI sections instead of the Misc message type.
+nm_WebApplyMiscSetting(key, value) {
+	global
+	local section, fps
+
+	; --- values that are not stored in nm_config.ini ---
+	if (key = "AutoStartEnabled" || key = "AutoStartDelay") {
+		if (key = "AutoStartEnabled") {
+			try AutoStartEnabled := value ? 1 : 0
+		} else {
+			try AutoStartDelay := value + 0
+		}
+		try nm_WebWriteAutoStart(AutoStartEnabled, AutoStartDelay)
+		nm_WebBroadcastSetting("misc", key, value)
+		return
+	}
+	if (key = "WebFPSCount" || key = "UWPFPSCount") {
+		fps := Max(15, Min(1000, Integer(value)))
+		try %key% := fps
+		try nm_WebWriteFPSCount((key = "WebFPSCount") ? "Web" : "UWP", fps)
+		nm_WebBroadcastSetting("misc", key, fps)
+		return
+	}
+
+	switch key, 0 {
+		case "DebugLogEnabled", "NightAnnouncementCheck", "NightAnnouncementName"
+			, "NightAnnouncementPingID", "NightAnnouncementWebhook":
+			section := "Status"
+		default:
+			section := "Settings"
+	}
+	try %key% := value
+	try IniWrite value, "settings\nm_config.ini", section, key
+	try nm_UpdateGUIVar(key)
+	; hotkeys are registered at startup, so re-register them when one changes
+	if (SubStr(key, -6) = "Hotkey")
+		nm_WebApplyHotkeys()
+	nm_WebBroadcastSetting("misc", key, value)
+}
+
+; Re-register the macro hotkeys from the current globals.
+nm_WebApplyHotkeys() {
+	global
+	try {
+		Hotkey StartHotkey, start, "On"
+		Hotkey PauseHotkey, nm_pause, "On"
+		Hotkey StopHotkey, stop, "On"
+		Hotkey AutoClickerHotkey, autoclicker, "On T2"
+		Hotkey TimersHotkey, timers, "On"
+		Hotkey DebugHotkey, nm_copyDebugLog, "On"
+	}
+}
+
+; Restore the default hotkeys and push the new values back to the web GUI.
+; (nm_ResetHotkeys() cannot be reused directly because it touches the classic
+; "Hotkeys" popup which is not open when the web GUI asks for a reset.)
+nm_WebResetHotkeys() {
+	global
+	local k, _
+	try {
+		Hotkey StartHotkey, start, "Off"
+		Hotkey PauseHotkey, nm_pause, "Off"
+		Hotkey StopHotkey, stop, "Off"
+		Hotkey AutoClickerHotkey, autoclicker, "Off"
+		Hotkey TimersHotkey, timers, "Off"
+		Hotkey DebugHotkey, nm_copyDebugLog, "Off"
+	}
+	StartHotkey := "F1", PauseHotkey := "F2", StopHotkey := "F3"
+	AutoClickerHotkey := "F4", TimersHotkey := "F5", DebugHotkey := "F6"
+	for _, k in ["StartHotkey", "PauseHotkey", "StopHotkey", "AutoClickerHotkey", "TimersHotkey", "DebugHotkey"]
+		try IniWrite %k%, "settings\nm_config.ini", "Settings", k
+	nm_WebApplyHotkeys()
+	for _, k in ["StartHotkey", "PauseHotkey", "StopHotkey", "AutoClickerHotkey", "TimersHotkey", "DebugHotkey"] {
+		try nm_WebBroadcastSetting("misc", k, %k%)
+	}
+	try nm_UpdateWebButtonLabels()
+}
+
+; Refresh the web top-bar button labels after the hotkeys changed.
+nm_UpdateWebButtonLabels() {
+	global MyWindow, StartHotkey, PauseHotkey, StopHotkey, AutoClickerHotkey, TimersHotkey
+	local js
+	if !IsSet(MyWindow)
+		return
+	js := "var m={StartHotkey:'" StartHotkey "',PauseHotkey:'" PauseHotkey "',StopHotkey:'" StopHotkey
+		. "',AutoClickerHotkey:'" AutoClickerHotkey "',TimersHotkey:'" TimersHotkey "'};"
+		. "$('#Start-Button').text(' Start ('+m.StartHotkey+')');"
+		. "$('#Pause-Button').text(' Pause ('+m.PauseHotkey+')');"
+		. "$('#Stop-Button').text(' Stop ('+m.StopHotkey+')');"
+		. "$('#AutoClick-Button').text(' AutoClick ('+m.AutoClickerHotkey+')');"
+		. "$('#Status-Button').text(' Status ('+m.TimersHotkey+')');"
+	try MyWindow.ExecuteScript(js)
+}
+
+; Apply a nectar preset (mirrors the classic nm_NectarPreset switch).
+nm_WebSetNectarPreset(preset) {
+	global
+	if (preset = "Custom")
+		return
+	ba_nectarPresetByName(preset)
+}
+
+ba_nectarPresetByName(preset) {
+	global
+	nPreset := preset
+	try MainGui["NPreset"].Text := preset
+	IniWrite nPreset, "settings\nm_config.ini", "Planters", "NPreset"
+
+	switch preset, 0 {
+		case "Blue":
+		nm_NectarPrioritySet("Comforting", "Motivating", "Satisfying", "Refreshing", "Invigorating")
+		nm_NectarMinSet(70, 80, 80, 80, 40)
+		nm_NectarFieldChecks(Map("Dandelion",1, "Bamboo",0, "PineTree",1, "Mushroom",0, "Spider",1, "Rose",1, "Stump",0
+			, "Sunflower",1, "Pineapple",1, "Pumpkin",0, "BlueFlower",1, "Strawberry",1, "Coconut",0
+			, "Clover",1, "Cactus",1, "MountainTop",0, "Pepper",1))
+
+		case "Red":
+		nm_NectarPrioritySet("Invigorating", "Refreshing", "Motivating", "Satisfying", "Comforting")
+		nm_NectarMinSet(70, 80, 80, 80, 40)
+		nm_NectarFieldChecks(Map("Clover",0, "Cactus",1, "MountainTop",0, "Pepper",1, "BlueFlower",1, "Strawberry",1
+			, "Coconut",0, "Mushroom",0, "Spider",1, "Rose",1, "Stump",0, "Sunflower",1, "Pineapple",1, "Pumpkin",1
+			, "Dandelion",1, "Bamboo",1, "PineTree",1))
+
+		case "White":
+		nm_NectarPrioritySet("Satisfying", "Motivating", "Refreshing", "Comforting", "Invigorating")
+		nm_NectarMinSet(70, 80, 80, 80, 40)
+		nm_NectarFieldChecks(Map("Sunflower",1, "Pineapple",1, "Pumpkin",0, "Mushroom",0, "Spider",1, "Rose",1
+			, "Stump",0, "BlueFlower",1, "Strawberry",1, "Coconut",0, "Dandelion",1, "Bamboo",1, "PineTree",1
+			, "Clover",1, "Cactus",1, "MountainTop",0, "Pepper",1))
+	}
+	ba_saveConfig_()
+}
+
+nm_NectarPrioritySet(a, b, c, d, e) {
+	global
+	n1priority := a, n2priority := b, n3priority := c, n4priority := d, n5priority := e
+	try MainGui["n1Priority"].Text := a
+	try MainGui["n2Priority"].Text := b
+	try MainGui["n3Priority"].Text := c
+	try MainGui["n4Priority"].Text := d
+	try MainGui["n5Priority"].Text := e
+}
+
+nm_NectarMinSet(a, b, c, d, e) {
+	global
+	n1minPercent := a, n2minPercent := b, n3minPercent := c, n4minPercent := d, n5minPercent := e
+	try MainGui["n1minPercent"].Text := a
+	try MainGui["n2minPercent"].Text := b
+	try MainGui["n3minPercent"].Text := c
+	try MainGui["n4minPercent"].Text := d
+	try MainGui["n5minPercent"].Text := e
+}
+
+nm_NectarFieldChecks(map) {
+	global
+	local name, val, k
+	for name, val in map {
+		k := name "FieldCheck"
+		try %k% := val
+		try MainGui[k].Value := val
+		try IniWrite val, "settings\nm_config.ini", "Planters", k
+	}
+}
+
+nm_WebBlenderItemFromWeb(v) {
+	; NOTE: do NOT name this variable `map` — identifiers are case-insensitive, so
+	; `map` shadows the built-in Map() and `Map(...)` would try to call the variable
+	; (which is what silently broke Blender/Wind Shrine item changes).
+	static itemMap := Map("antpass","AntPass","cloudvial","CloudVial","blueberry","Blueberry","blueextract","BlueExtract"
+		,"causticwax","CausticWax","enzymes","Enzymes","fielddice","FieldDice","glitter","Glitter","glue","Glue"
+		,"gumdrops","Gumdrops","hardwax","HardWax","loadeddice","LoadedDice","mooncharms","MoonCharms","oil","Oil"
+		,"pineapple","Pineapple","purplepotion","PurplePotion","redextract","RedExtract","smoothdice","SmoothDice"
+		,"softwax","SoftWax","starjelly","StarJelly","strawberry","Strawberry","sunflower","Sunflower"
+		,"supersmoothie","SuperSmoothie","swirledwax","SwirledWax","tropicaldrink","TropicalDrink","turpentine","Turpentine")
+	lower := StrLower(v)
+	if (lower = "none" || lower = "")
+		return "None"
+	return itemMap.Has(lower) ? itemMap[lower] : v
+}
+
+nm_WebBlenderItemToWeb(v) {
+	if (v = "None" || v = "")
+		return "none"
+	return StrLower(v)
 }
 ;///////////////////////////////////////////////////////////////////////////////////////////
 ; END WebView2 GUI
@@ -2074,9 +3264,17 @@ nm_importConfig()
 
 	local file := FileOpen(inipath, "w-d")
 	file.Write(ini), file.Close()
+
+	; Keep the section->key catalog so the web bridge can snapshot every setting.
+	nm_SettingsCatalog := config
 }
 nm_importConfig()
+; Mirror the saved window state onto the new WebView GUI. The classic GUI applies
+; these in its own constructor further down, but MyWindow is created above.
+try MyWindow.Opt((AlwaysOnTop ? "+" : "-") "AlwaysOnTop")
+try WinSetTransparent 255-floor(GuiTransparency*2.55), MyWindow
 SetTimer SendBootstrapState, -1000
+SetTimer nm_WebSyncTimer, 750
 
 nm_ReadIni(path)
 {
@@ -3209,6 +4407,9 @@ try Hotkey StopHotkey, stop, "On"
 pToken := Gdip_Startup()
 currentWalk := {pid:"", name:""} ; stores "pid" (script process ID) and "name" (pattern/movement name)
 
+; Match the new GUI's window/taskbar icon to the logo shown in its upper-left corner.
+try nm_ApplyWebWindowIcon()
+
 priorityList:=[], defaultPriorityList:=["Night", "Mondo", "Planter", "Bugrun", "Collect", "QuestRotate", "Boost", "GoGather"]
 for x in StrSplit(priorityListNumeric)
 	priorityList.push(defaultPriorityList[x])
@@ -3746,7 +4947,7 @@ for k,v in ["PMondoGuid","PMondoGuidComplete","PFieldBoosted","PFieldGuidExtend"
 
 ; add tabs
 TabArr := ["Gather","Collect/Kill","Boost","Quests","Planters","Status","Settings","Misc","Credits"], (BuffDetectReset = 1) && TabArr.Push("Advanced")
-(TabCtrl := MainGui.Add("Tab", "x0 y-1 w500 h240 -Wrap", TabArr)).OnEvent("Change", (*) => TabCtrl.Focus())
+(TabCtrl := MainGui.Add("Tab", "x0 y-1 w500 h240 -Wrap", TabArr)).OnEvent("Change", nm_OnTabChange)
 SendMessage 0x1331, 0, 20, , TabCtrl ; set minimum tab width
 ; check for update
 try AsyncHttpRequest("GET", "https://api.github.com/repos/NatroTeam/NatroMacro/releases", nm_AutoUpdateHandler
@@ -4698,6 +5899,12 @@ SetLoadingProgress(100)
 
 ;unlock tabs
 nm_LockTabs(0)
+; The web page paints before the classic GUI finishes building, so the tab broadcast
+; fired from SendBootstrapState (and its -1000 ms timer) is usually dropped — TabCtrl
+; may not exist yet. Re-send the classic tab once the GUI is definitely built so the
+; web sidebar opens on the same tab (Gather on a fresh start).
+SetTimer(() => nm_WebBroadcastTab(nm_ClassicTabToWeb()), -500)
+SetTimer(() => nm_WebBroadcastTab(nm_ClassicTabToWeb()), -2500)
 nm_setStatus("Startup", "UI")
 TabCtrl.Focus()
 MainGui.Title := "Natro Macro"
@@ -6168,6 +7375,7 @@ nm_SaveFieldDefault(GuiCtrl, *){
 	}
 }
 nm_CopyGatherSettings(GuiCtrl, *){
+	global
 	static q := Chr(34), ob := Chr(123), cb := Chr(125)
 	local i := SubStr(GuiCtrl.Name, -1)
 	A_Clipboard := ob q "Name" q ":" q FieldName%i% q ","
@@ -6288,8 +7496,12 @@ nm_CollectKillButton(GuiCtrl, *){
 	local p, i, c, k, v, arr
 
 	p := (GuiCtrl.Name = "KillSubTab")
+	nm_SubTabKill := p ? 1 : 0
 	MainGui["CollectSubTab"].Enabled := p
 	MainGui["KillSubTab"].Enabled := !p
+	; Collect and Kill share one classic tab but two web sidebar tabs, so tell the
+	; web GUI which sub-tab is now showing (keeps the two GUIs in step).
+	try nm_WebBroadcastTab(nm_SubTabKill ? "kill" : "collect")
 
 	for i,c in [0,1] ; hide first, then show
 	{
@@ -9019,15 +10231,17 @@ nm_guiThemeSelect(*){
 	Sleep 10000
 }
 nm_guiTransparencySet(*){
-	global GuiTransparency
+	global GuiTransparency, MyWindow
 	MainGui["GuiTransparency"].Text := GuiTransparency := MainGui["GuiTransparencyUpDown"].Value * 5
 	IniWrite GuiTransparency, "settings\nm_config.ini", "Settings", "GuiTransparency"
 	WinSetTransparent 255-floor(GuiTransparency*2.55), MainGui
+	try WinSetTransparent 255-floor(GuiTransparency*2.55), MyWindow
 }
 nm_AlwaysOnTop(*){
 	global
 	IniWrite (AlwaysOnTop := MainGui["AlwaysOnTop"].Value), "settings\nm_config.ini", "Settings", "AlwaysOnTop"
 	MainGui.Opt((AlwaysOnTop ? "+" : "-") "AlwaysOnTop")
+	try MyWindow.Opt((AlwaysOnTop ? "+" : "-") "AlwaysOnTop")
 }
 nm_HiveBees(GuiCtrl, *){
 	global HiveBees
@@ -24453,6 +25667,8 @@ nm_UpdateGUIVar(var)
 			MainGui[k "Picture"].Value := hBitmapsSB[%k%] ? ("HBITMAP:*" hBitmapsSB[%k%]) : ""
 			z := SubStr(k, -1)
 			MainGui["BlenderAdd" z].Text := (BlenderItem%z% = "None") ? "Add" : "Clear"
+			; Also refresh the "(amount) [repeat]" line so a web edit shows the full slot.
+			try MainGui["BlenderData" z].Text := "(" BlenderAmount%z% ") [" ((BlenderIndex%z% = "Infinite") ? "∞" : BlenderIndex%z%) "]"
 
 			case "BlenderIndex1", "BlenderIndex2", "BlenderIndex3":
 			Num := SubStr(k, -1)
@@ -24470,6 +25686,8 @@ nm_UpdateGUIVar(var)
 			MainGui[k "Picture"].Value := hBitmapsSB[%k%] ? ("HBITMAP:*" hBitmapsSB[%k%]) : ""
 			z := SubStr(k, -1)
 			MainGui["ShrineAdd" z].Text := (ShrineItem%z% = "None") ? "Add" : "Clear"
+			; Also refresh the "(amount) [repeat]" line so a web edit shows the full slot.
+			try MainGui["ShrineData" z].Text := "(" ShrineAmount%z% ") [" ((ShrineIndex%z% = "Infinite") ? "∞" : ShrineIndex%z%) "]"
 
 			case "ShrineIndex1", "ShrineIndex2":
 			Num := SubStr(k, -1)

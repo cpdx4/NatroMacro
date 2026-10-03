@@ -40,8 +40,17 @@ pids
 # Dependencies
 node_modules
 
+
 # Test output
 lib-cov
 /coverage
 /test/test-apps/*/dist
 MMScreenshots/*
+
+
+# Files for AI only
+CONTEXT.md
+/plans
+
+# WebView2 runtime user-data folders (created next to the host exe when DataDir is unset)
+*.WebView2/

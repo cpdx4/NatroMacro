@@ -76,8 +76,14 @@ class WebView2 {
 				options.TargetCompatibleBrowserVersion := ver
 			options := this.EnvironmentOptions(options)
 		}
+		; Do NOT default to the Edge browser's own profile (%LOCALAPPDATA%\Microsoft\Edge\User Data):
+		; when Edge (or any other WebView2 app sharing that profile) is running, the folder is locked
+		; and CreateCoreWebView2EnvironmentWithOptions returns 0x800700AA (ERROR_BUSY: "The requested
+		; resource is in use"). Use an app-specific user-data folder instead.
+		if !dataDir
+			dataDir := A_LocalAppData '\NatroMacro\WebView2'
 		DllCall(dllPath '\CreateCoreWebView2EnvironmentWithOptions', 'str', edgeRuntime,
-			'str', dataDir || RegExReplace(A_AppData, 'Roaming$', 'Local\Microsoft\Edge\User Data'), 'ptr', options,
+			'str', dataDir, 'ptr', options,
 			'ptr', this.AsyncHandler(&p, this.Environment), 'hresult')
 		return p
 	}

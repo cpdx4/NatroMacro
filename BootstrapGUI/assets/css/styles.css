@@ -16,10 +16,6 @@
   min-height: 400px;
 }
 
-#field-icon-buttons {
-  overflow: hidden !important;
-}
-
 .title-btn:hover {
   background: rgba(0, 0, 0, .2);
 }
@@ -97,5 +93,76 @@ div[id^='pathBall'] {
 .box100x100 .bootstrap-select button {
   width: 100px !important;
   height: 100px !important;
+}
+
+/* About tab: give each contributor name block (Development / Testers / Supporters)
+   a dark panel background - mirroring the Status Log panel on the Status tab - so the
+   bright name colours stay readable without a separate chip per name. */
+#sidebar-about p[style*="line-height: 1.9"] {
+  background-color: #1a1a1a;
+  padding: 10px 12px;
+  border-radius: 6px;
+}
+
+/* Settings tab: visual hive-slot picker (Shop [6][5][4][3][2][1] Red Cannon). */
+.hive-slot-picker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.hive-slot-picker .hive-slot-end {
+  font-size: 12px;
+  color: #adb5bd;
+  white-space: nowrap;
+}
+
+.hive-slot-option {
+  margin: 0;
+}
+
+.hive-slot-option input[type="radio"] {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.hive-slot-option span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 69px;
+  border: 2px solid transparent;
+  border-radius: 6px;
+  background-color: #212529;
+  cursor: pointer;
+  user-select: none;
+  overflow: hidden;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.hive-slot-option span img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+}
+
+.hive-slot-option span:hover {
+  border-color: #fff;
+}
+
+.hive-slot-option input[type="radio"]:checked + span {
+  border-color: #28e85a;
+  box-shadow: 0 0 10px rgba(40, 232, 90, 0.9);
+}
+
+.hive-slot-option input[type="radio"]:focus-visible + span {
+  outline: 2px solid #0d6efd;
+  outline-offset: 2px;
 }
 
