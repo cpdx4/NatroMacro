@@ -147,15 +147,21 @@ GroupAdd("ScriptGroup", "ahk_pid" ScriptPID)
 ;and Alt+Tab and left only a Close button (no Minimize/Maximize). Use the normal application
 ;window style instead so the new GUI shows up as its own taskbar window with Min/Max/Restore.
 ;
-;IMPORTANT: always pass an explicit WebView2 DataDir here. If it is left empty, the vendored
-;`WebViewToo_Resources\WebView2.ahk` (which MUST NOT be edited - see CONTEXT.md) falls back to the
-;Edge browser's own profile (%LOCALAPPDATA%\Microsoft\Edge\User Data). When Edge or any other
-;WebView2 host is using that profile, the folder is locked and CreateCoreWebView2EnvironmentWithOptions
-;returns 0x800700AA (ERROR_BUSY: "The requested resource is in use") during auto-execute. This GUI is
-;stateless local content, so use a per-user, per-script temp folder: it never touches the repo/install
-;folder, and the OS may purge it (nothing of value is lost).
-WebView2DataDir := A_Temp "\" RegExReplace(A_ScriptName, "i)\.(ahk|exe)$") "\WebView2"
-MyWindow := WebViewGui("+Resize +Caption +MinimizeBox +MaximizeBox", "Natro Macro (Gummy Boot(strap) Edition - CONCEPT)", , {DataDir: WebView2DataDir})
+;IMPORTANT: always pass an explicit WebView2 DataDir here (see CONTEXT.md). Leaving it empty makes the
+;vendored `WebViewToo_Resources\WebView2.ahk` fall back to the Edge browser's own profile, which is locked
+;whenever Edge runs -> 0x800700AA (ERROR_BUSY). Do NOT use %LOCALAPPDATA% / %TEMP% / %APPDATA%: on this
+;machine the OS *denies directory creation* under AppData ("Access is denied"), so environment creation
+;succeeds but CONTROLLER creation then fails (0x8000FFFF / 0x80004004). The location that works is next to
+;the script/interpreter - which is also the WebView2 SDK default - so use that. It is listed in .gitignore
+;so it never clutters source control. (Verified: this folder -> controller err=0x00000000.)
+WebView2DataDir := A_ScriptDir "\WebView2_Data"
+try DirCreate(WebView2DataDir)
+try
+    MyWindow := WebViewGui("+Resize +Caption +MinimizeBox +MaximizeBox", "Natro Macro (Gummy Boot(strap) Edition - CONCEPT)", , {DataDir: WebView2DataDir})
+catch as e {
+    MsgBox "Failed to create the WebView2 window.`n`n" e.Message "`n`nDataDir: " WebView2DataDir, "Natro Macro - WebView2 error", 0x10
+    ExitApp
+}
 MyWindow.OnEvent("Close", (*) => ExitApp())
 ; The GUI is served over the https virtual host "ahk.localhost", so the WebView
 ; caches index.html / its scripts. Append a per-run query so a restart always picks

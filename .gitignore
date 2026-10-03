@@ -52,5 +52,3 @@ MMScreenshots/*
 CONTEXT.md
 /plans
 
-# WebView2 runtime user-data folders (created next to the host exe when DataDir is unset)
-*.WebView2/
