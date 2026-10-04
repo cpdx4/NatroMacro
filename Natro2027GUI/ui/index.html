@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Natro Macro &mdash; 2027 GUI</title>
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+<header>
+  <h1>Natro Macro <span class="sub">2027 GUI</span></h1>
+  <div id="meta">starting&hellip;</div>
+</header>
+
+<main>
+  <section class="card">
+    <h2>Engine</h2>
+    <div id="engine">detecting&hellip;</div>
+  </section>
+
+  <section class="card">
+    <h2>Live setting (AHK &rarr; UI)</h2>
+    <p><code>CheckNight</code> = <b id="checkNight">?</b></p>
+  </section>
+
+  <section class="card">
+    <h2>Set a setting (UI &rarr; AHK)</h2>
+    <label class="row">
+      <input type="checkbox" id="toggleNight">
+      <span>CheckNight</span>
+    </label>
+    <p id="status" class="dim">idle</p>
+  </section>
+</main>
+
+<script src="js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,84 @@
+/* Natro2027GUI - ui\css\styles.css
+   Sciter CSS subset only - no Bootstrap, no jQuery, no web fonts. */
+
+html {
+    background: #101418;
+    color: #e6edf3;
+    font: 14px "Segoe UI", system, sans-serif;
+}
+
+body {
+    margin: 0;
+    padding: 20px 22px;
+}
+
+header {
+    display: flex;
+    flex-flow: row wrap;
+    align-items: baseline;
+    gap: 8px 16px;
+    border-bottom: 1px solid #2d333b;
+    padding-bottom: 12px;
+    margin-bottom: 16px;
+}
+
+h1 {
+    font-size: 18px;
+    margin: 0;
+}
+
+h1 .sub {
+    color: #8b949e;
+    font-weight: normal;
+}
+
+h2 {
+    font-size: 13px;
+    margin: 0 0 8px;
+    color: #c9d1d9;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+#meta {
+    color: #8b949e;
+    font-size: 12px;
+}
+
+main {
+    display: flex;
+    flex-flow: row wrap;
+    gap: 12px;
+}
+
+.card {
+    flex: 1 1 220px;
+    background: #161b22;
+    border: 1px solid #2d333b;
+    border-radius: 6px;
+    padding: 12px 14px;
+}
+
+code {
+    background: #1f242c;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-family: "Consolas", monospace;
+    font-size: 12px;
+}
+
+.row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+}
+
+.dim {
+    color: #8b949e;
+    font-size: 12px;
+}
+
+b {
+    color: #58a6ff;
+}

@@ -31,6 +31,7 @@ You should have received a copy of the license along with Natro Macro. If not, p
 #Include "nowUnix.ahk"
 #Include "ErrorHandling.ahk"
 #Include "HashFile.ahk"
+#Include "%A_ScriptDir%\..\Natro2027GUI\Natro2027GUI.ahk"
 
 #Warn VarUnset, Off
 
