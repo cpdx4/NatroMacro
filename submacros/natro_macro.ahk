@@ -149,17 +149,34 @@ GroupAdd("ScriptGroup", "ahk_pid" ScriptPID)
 ;
 ;IMPORTANT: always pass an explicit WebView2 DataDir here (see CONTEXT.md). Leaving it empty makes the
 ;vendored `WebViewToo_Resources\WebView2.ahk` fall back to the Edge browser's own profile, which is locked
-;whenever Edge runs -> 0x800700AA (ERROR_BUSY). Do NOT use %LOCALAPPDATA% / %TEMP% / %APPDATA%: on this
-;machine the OS *denies directory creation* under AppData ("Access is denied"), so environment creation
-;succeeds but CONTROLLER creation then fails (0x8000FFFF / 0x80004004). The location that works is next to
-;the script/interpreter - which is also the WebView2 SDK default - so use that. It is listed in .gitignore
-;so it never clutters source control. (Verified: this folder -> controller err=0x00000000.)
-WebView2DataDir := A_ScriptDir "\WebView2_Data"
-try DirCreate(WebView2DataDir)
+;whenever Edge runs -> 0x800700AA (ERROR_BUSY). Use a per-user AppData folder ONLY - never the script folder.
+;If the OS denies directory creation there ("Access is denied", as it does for AutoHotkey*.exe on some
+;locked-down machines), WebView2 startup fails with a visible error rather than writing into the repo.
+WebView2DataDir := nm_PickWebViewDataDir()
 try
     MyWindow := WebViewGui("+Resize +Caption +MinimizeBox +MaximizeBox", "Natro Macro (Gummy Boot(strap) Edition - CONCEPT)", , {DataDir: WebView2DataDir})
 catch as e {
     MsgBox "Failed to create the WebView2 window.`n`n" e.Message "`n`nDataDir: " WebView2DataDir, "Natro Macro - WebView2 error", 0x10
+    ExitApp
+}
+
+; Pick a per-user WebView2 user-data folder - never the script folder. Prefer %LOCALAPPDATA%, then %APPDATA%,
+; and return the first the OS lets us create. If none is writable (e.g. a security policy blocks AutoHotkey.exe
+; from writing under AppData), fail with a clear message instead of dropping profile data into the repository.
+nm_PickWebViewDataDir() {
+    local dir
+    for dir in [EnvGet("LOCALAPPDATA") "\NatroMacro\WebView2", EnvGet("APPDATA") "\NatroMacro\WebView2"] {
+        try {
+            DirCreate(dir)
+            return dir
+        }
+    }
+    msg := "Natro Macro needs a WebView2 data folder but Windows denied write access to both:`n`n"
+        . EnvGet("LOCALAPPDATA") "\NatroMacro\WebView2`n"
+        . EnvGet("APPDATA") "\NatroMacro\WebView2`n`n"
+        . "AutoHotkey.exe is being blocked from writing under AppData (error 5, Access is denied). "
+        . "Allow AutoHotkey.exe in your security/application-control policy, or run the macro outside this restricted environment, then restart."
+    MsgBox msg, "Natro Macro - WebView2 error", 0x10
     ExitApp
 }
 MyWindow.OnEvent("Close", (*) => ExitApp())
