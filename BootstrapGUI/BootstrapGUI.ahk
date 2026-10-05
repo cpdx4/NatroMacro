@@ -468,6 +468,11 @@ WebUpdateState(payload) {
 		case "kill":
 			key := data["key"], value := data["value"]
 			OutputDebug "[ahk] recv kill " key "=" value
+			; Keep the legacy classic GUI globals (which the macro runtime reads) and the
+			; classic controls in step with the web Kill tab. The hand-written cases below
+			; only ever set the classic *control* values, and assigning a control's Value
+			; does NOT update its associated global, so the runtime used to ignore web edits.
+			nm_WebKillToClassic(key, value)
 			if (key = "KillBugRunGatherInterrupt") {
 				KillBugRunGatherInterrupt := value ? 1 : 0
 				IniWrite KillBugRunGatherInterrupt, "settings\nm_config.ini", "Kill", "BugRunGatherInterrupt"
@@ -1041,6 +1046,8 @@ WebUpdateState(payload) {
 			catch {
 				OutputDebug "[ahk] Error processing killSettings"
 			}
+			; Mirror the bulk update onto the classic GUI globals/controls too.
+			try nm_WebSyncKillToClassic()
 			; Broadcast the updated state to both UIs (bidirectional sync)
 			OutputDebug "[ahk] Broadcasting updated kill settings to all UIs"
 			SendBootstrapState()
@@ -1599,6 +1606,244 @@ nm_WebSnapshot() {
 	return m
 }
 
+;///////////////////////////////////////////////////////////////////////////////////////////
+; Kill tab <-> classic GUI mirroring
+;
+; The web Kill tab persists to the [Kill] INI section using keys such as KillLadybugsMode,
+; while the legacy classic GUI (and the macro runtime) read a different set of globals
+; (BugrunLadybugsCheck/BugrunLadybugsLoot, Stinger*, KingBeetle*, ...). WebUpdateState's
+; `kill` case updated the classic *controls* but not those globals, and nothing reconciled
+; the two at startup, so the old UI showed stale "Off" values (and the runtime kept using
+; the stale globals) until a Kill control was touched. These helpers keep them in step.
+;///////////////////////////////////////////////////////////////////////////////////////////
+
+; Apply one Kill* setting (key = "KillXxx", value) to the classic globals + [Collect] INI
+; and, when the classic GUI exists, to the matching controls. Safe to call before MainGui
+; exists: the controls are skipped and the globals drive their initial ("Checked"/value) state.
+; NOTE: explicit global names are used (not dynamic %name% := assignment, which in AHK v2
+; raises "Variable not found" unless the target variable already holds a value).
+nm_WebKillToClassic(key, value) {
+	global
+	hasGui := IsSet(MainGui)
+	switch key, 0 {
+		; --- Bug Run: one mode string -> the classic Check + Loot pair ---
+		case "KillLadybugsMode":
+			BugrunLadybugsCheck := (value = "Off") ? 0 : 1
+			BugrunLadybugsLoot := (value = "Kill+Loot") ? 1 : 0
+			nm_WebKillPair("Ladybugs", BugrunLadybugsCheck, BugrunLadybugsLoot, hasGui)
+		case "KillRhinoBeetlesMode":
+			BugrunRhinoBeetlesCheck := (value = "Off") ? 0 : 1
+			BugrunRhinoBeetlesLoot := (value = "Kill+Loot") ? 1 : 0
+			nm_WebKillPair("RhinoBeetles", BugrunRhinoBeetlesCheck, BugrunRhinoBeetlesLoot, hasGui)
+		case "KillSpiderMode":
+			BugrunSpiderCheck := (value = "Off") ? 0 : 1
+			BugrunSpiderLoot := (value = "Kill+Loot") ? 1 : 0
+			nm_WebKillPair("Spider", BugrunSpiderCheck, BugrunSpiderLoot, hasGui)
+		case "KillMantisMode":
+			BugrunMantisCheck := (value = "Off") ? 0 : 1
+			BugrunMantisLoot := (value = "Kill+Loot") ? 1 : 0
+			nm_WebKillPair("Mantis", BugrunMantisCheck, BugrunMantisLoot, hasGui)
+		case "KillScorpionsMode":
+			BugrunScorpionsCheck := (value = "Off") ? 0 : 1
+			BugrunScorpionsLoot := (value = "Kill+Loot") ? 1 : 0
+			nm_WebKillPair("Scorpions", BugrunScorpionsCheck, BugrunScorpionsLoot, hasGui)
+		case "KillWerewolfMode":
+			BugrunWerewolfCheck := (value = "Off") ? 0 : 1
+			BugrunWerewolfLoot := (value = "Kill+Loot") ? 1 : 0
+			nm_WebKillPair("Werewolf", BugrunWerewolfCheck, BugrunWerewolfLoot, hasGui)
+
+		; --- Stingers / bosses / bug-run extras: classic bool global <-> Kill* key ---
+		case "KillBugRunGatherInterrupt":
+			BugrunInterruptCheck := value ? 1 : 0
+			nm_WebKillClassicStore("BugrunInterruptCheck", BugrunInterruptCheck, hasGui)
+		case "KillBugRunRespawnTime":
+			MonsterRespawnTime := (value = "") ? 0 : value
+			nm_WebKillClassicStore("MonsterRespawnTime", MonsterRespawnTime, hasGui)
+		case "KillViciousBeeEnabled":
+			StingerCheck := value ? 1 : 0
+			nm_WebKillClassicStore("StingerCheck", StingerCheck, hasGui)
+		case "KillViciousBeeOnlyDaily":
+			StingerDailyBonusCheck := value ? 1 : 0
+			nm_WebKillClassicStore("StingerDailyBonusCheck", StingerDailyBonusCheck, hasGui)
+		case "KillViciousBeeFieldClover":
+			StingerCloverCheck := value ? 1 : 0
+			nm_WebKillClassicStore("StingerCloverCheck", StingerCloverCheck, hasGui)
+		case "KillViciousBeeFieldSpider":
+			StingerSpiderCheck := value ? 1 : 0
+			nm_WebKillClassicStore("StingerSpiderCheck", StingerSpiderCheck, hasGui)
+		case "KillViciousBeeFieldCactus":
+			StingerCactusCheck := value ? 1 : 0
+			nm_WebKillClassicStore("StingerCactusCheck", StingerCactusCheck, hasGui)
+		case "KillViciousBeeFieldRose":
+			StingerRoseCheck := value ? 1 : 0
+			nm_WebKillClassicStore("StingerRoseCheck", StingerRoseCheck, hasGui)
+		case "KillViciousBeeFieldMountainTop":
+			StingerMountainTopCheck := value ? 1 : 0
+			nm_WebKillClassicStore("StingerMountainTopCheck", StingerMountainTopCheck, hasGui)
+		case "KillViciousBeeFieldPepper":
+			StingerPepperCheck := value ? 1 : 0
+			nm_WebKillClassicStore("StingerPepperCheck", StingerPepperCheck, hasGui)
+		case "KillKingBeetleEnabled":
+			KingBeetleCheck := value ? 1 : 0
+			nm_WebKillClassicStore("KingBeetleCheck", KingBeetleCheck, hasGui)
+		case "KillKingBeetleWaitBabyLove":
+			KingBeetleBabyCheck := value ? 1 : 0
+			nm_WebKillClassicStore("KingBeetleBabyCheck", KingBeetleBabyCheck, hasGui)
+		case "KillKingBeetleAmuletAction":
+			KingBeetleAmuletMode := (value = "Keep Old") ? 1 : 0
+			nm_WebKillClassicStore("KingBeetleAmuletMode", KingBeetleAmuletMode, hasGui)
+			if hasGui
+				try MainGui["KingBeetleAmuletModeText"].Text := (KingBeetleAmuletMode = 1) ? " Keep Old" : "Do Nothing"
+		case "KillTunnelBearEnabled":
+			TunnelBearCheck := value ? 1 : 0
+			nm_WebKillClassicStore("TunnelBearCheck", TunnelBearCheck, hasGui)
+		case "KillTunnelBearWaitBabyLove":
+			TunnelBearBabyCheck := value ? 1 : 0
+			nm_WebKillClassicStore("TunnelBearBabyCheck", TunnelBearBabyCheck, hasGui)
+		case "KillCocoCrabEnabled":
+			CocoCrabCheck := value ? 1 : 0
+			nm_WebKillClassicStore("CocoCrabCheck", CocoCrabCheck, hasGui)
+		case "KillCommandoChickEnabled":
+			CommandoCheck := value ? 1 : 0
+			nm_WebKillClassicStore("CommandoCheck", CommandoCheck, hasGui)
+		case "KillStumpSnailEnabled":
+			StumpSnailCheck := value ? 1 : 0
+			nm_WebKillClassicStore("StumpSnailCheck", StumpSnailCheck, hasGui)
+		case "KillCommandoChickLevel":
+			ChickLevel := (value = "") ? 10 : value
+			nm_WebKillClassicStore("ChickLevel", ChickLevel, hasGui)
+			if hasGui
+				try MainGui["ChickLevelText"].Text := ChickLevel
+		case "KillCommandoChickTime":
+			ChickTime := (value = "Kill") ? "Kill" : SubStr(value, 1, -1)
+			nm_WebKillClassicStore("ChickTime", ChickTime, hasGui)
+			if hasGui
+				nm_WebKillSetTimeCtrl("ChickTime", value)
+		case "KillStumpSnailTime":
+			SnailTime := (value = "Kill") ? "Kill" : SubStr(value, 1, -1)
+			nm_WebKillClassicStore("SnailTime", SnailTime, hasGui)
+			if hasGui
+				nm_WebKillSetTimeCtrl("SnailTime", value)
+		case "KillCommandoChickHP":
+			lvl := IsSet(ChickLevel) ? ChickLevel : 10
+			maxHP := CommandoChickHealth.Has(lvl) ? CommandoChickHealth[lvl] : 10000000
+			InputChickHealth := Round(Min(100, ((value || 0) / maxHP) * 100), 2)
+			try IniWrite InputChickHealth, "settings\nm_config.ini", "Collect", "InputChickHealth"
+		case "KillStumpSnailHP":
+			InputSnailHealth := Round(Min(100, ((value || 0) / 30000000) * 100), 2)
+			try IniWrite InputSnailHealth, "settings\nm_config.ini", "Collect", "InputSnailHealth"
+	}
+}
+
+; Persist + mirror one Bug Run Check/Loot pair (classic control names are Bugrun<Type>Check/Loot).
+nm_WebKillPair(t, check, loot, hasGui) {
+	global
+	try IniWrite check, "settings\nm_config.ini", "Collect", "Bugrun" t "Check"
+	try IniWrite loot, "settings\nm_config.ini", "Collect", "Bugrun" t "Loot"
+	if hasGui {
+		try MainGui["Bugrun" t "Check"].Value := check
+		try MainGui["Bugrun" t "Loot"].Value := loot
+	}
+}
+
+; Persist + mirror a classic setting whose global, control and [Collect] key share one name.
+nm_WebKillClassicStore(gname, gval, hasGui) {
+	global
+	try IniWrite gval, "settings\nm_config.ini", "Collect", gname
+	if hasGui
+		try MainGui[gname].Value := gval
+}
+
+nm_WebKillSetTimeCtrl(vn, value) {
+	global MainGui
+	static timeMap := Map("5m", 1, "10m", 2, "15m", 3, "Kill", 4)
+	updown := (vn = "ChickTime") ? "ChickTimeUpDown" : "SnailTimeUpDown"
+	if timeMap.Has(value)
+		try MainGui[updown].Value := timeMap[value]
+	try MainGui[vn "Text"].Text := value
+}
+
+; Rewrite the [Kill] section from the in-memory Kill* globals and mirror every Kill setting
+; onto the classic globals. Called once after nm_importConfig() and before MainGui is built.
+nm_WebSyncKillToClassic() {
+	global
+	static killKeys := ["KillBugRunGatherInterrupt", "KillBugRunRespawnTime", "KillLadybugsMode", "KillRhinoBeetlesMode"
+		, "KillSpiderMode", "KillMantisMode", "KillScorpionsMode", "KillWerewolfMode"
+		, "KillViciousBeeEnabled", "KillViciousBeeOnlyDaily", "KillViciousBeeFieldClover", "KillViciousBeeFieldSpider"
+		, "KillViciousBeeFieldCactus", "KillViciousBeeFieldRose", "KillViciousBeeFieldMountainTop", "KillViciousBeeFieldPepper"
+		, "KillKingBeetleEnabled", "KillKingBeetleWaitBabyLove", "KillKingBeetleAmuletAction"
+		, "KillTunnelBearEnabled", "KillTunnelBearWaitBabyLove", "KillCocoCrabEnabled"
+		, "KillCommandoChickEnabled", "KillCommandoChickLevel", "KillCommandoChickHP", "KillCommandoChickTime"
+		, "KillStumpSnailEnabled", "KillStumpSnailHP", "KillStumpSnailAmuletAction", "KillStumpSnailTime"]
+	for _, k in killKeys {
+		if !IsSet(%k%)
+			continue
+		v := %k%
+		; nm_importConfig() rewrites the whole INI from its catalog and drops [Kill].
+		try IniWrite v, "settings\nm_config.ini", "Kill", SubStr(k, 5)
+		nm_WebKillToClassic(k, v)
+	}
+}
+
+; Classic GUI -> web: derive the Kill* values from the legacy controls and store them in the
+; Kill* globals so nm_WebSyncTimer's snapshot pushes them to the web GUI. Health/time/level
+; are omitted because their classic handlers already broadcast the correct keys on change.
+nm_WebPushClassicKill() {
+	global MainGui
+	if !IsSet(MainGui)
+		return
+	static bugTypes := ["Ladybugs", "RhinoBeetles", "Spider", "Mantis", "Scorpions", "Werewolf"]
+	for _, t in bugTypes {
+		try chk := MainGui["Bugrun" t "Check"].Value
+		catch
+			continue
+		try loot := MainGui["Bugrun" t "Loot"].Value
+		catch
+			loot := 0
+		nm_WebSetKillVar("Kill" t "Mode", chk ? (loot ? "Kill+Loot" : "Kill") : "Off")
+	}
+	nm_WebPushFromCtrl("BugrunInterruptCheck", "KillBugRunGatherInterrupt", (v) => v ? 1 : 0)
+	nm_WebPushFromCtrl("MonsterRespawnTime", "KillBugRunRespawnTime", (v) => (v = "") ? 0 : v + 0)
+	nm_WebPushFromCtrl("StingerCheck", "KillViciousBeeEnabled", (v) => v ? 1 : 0)
+	nm_WebPushFromCtrl("StingerDailyBonusCheck", "KillViciousBeeOnlyDaily", (v) => v ? 1 : 0)
+	nm_WebPushFromCtrl("StingerCloverCheck", "KillViciousBeeFieldClover", (v) => v ? 1 : 0)
+	nm_WebPushFromCtrl("StingerSpiderCheck", "KillViciousBeeFieldSpider", (v) => v ? 1 : 0)
+	nm_WebPushFromCtrl("StingerCactusCheck", "KillViciousBeeFieldCactus", (v) => v ? 1 : 0)
+	nm_WebPushFromCtrl("StingerRoseCheck", "KillViciousBeeFieldRose", (v) => v ? 1 : 0)
+	nm_WebPushFromCtrl("StingerMountainTopCheck", "KillViciousBeeFieldMountainTop", (v) => v ? 1 : 0)
+	nm_WebPushFromCtrl("StingerPepperCheck", "KillViciousBeeFieldPepper", (v) => v ? 1 : 0)
+	nm_WebPushFromCtrl("KingBeetleCheck", "KillKingBeetleEnabled", (v) => v ? 1 : 0)
+	nm_WebPushFromCtrl("KingBeetleBabyCheck", "KillKingBeetleWaitBabyLove", (v) => v ? 1 : 0)
+	nm_WebPushFromCtrl("KingBeetleAmuletMode", "KillKingBeetleAmuletAction", (v) => v ? "Keep Old" : "Do Nothing")
+	nm_WebPushFromCtrl("TunnelBearCheck", "KillTunnelBearEnabled", (v) => v ? 1 : 0)
+	nm_WebPushFromCtrl("TunnelBearBabyCheck", "KillTunnelBearWaitBabyLove", (v) => v ? 1 : 0)
+	nm_WebPushFromCtrl("CocoCrabCheck", "KillCocoCrabEnabled", (v) => v ? 1 : 0)
+	nm_WebPushFromCtrl("CommandoCheck", "KillCommandoChickEnabled", (v) => v ? 1 : 0)
+	nm_WebPushFromCtrl("StumpSnailCheck", "KillStumpSnailEnabled", (v) => v ? 1 : 0)
+	nm_WebPushFromCtrl("ShellAmuletMode", "KillStumpSnailAmuletAction", (v) => v ? "Keep Old" : "Do Nothing")
+}
+
+nm_WebPushFromCtrl(ctrl, killKey, transform) {
+	global MainGui
+	try
+		v := MainGui[ctrl].Value
+	catch
+		return
+	nm_WebSetKillVar(killKey, transform(v))
+}
+
+nm_WebSetKillVar(name, value) {
+	global
+	; All Kill* globals are declared + assigned by nm_LoadKillSettings, so the dynamic
+	; reference is valid; guard anyway (AHK v2 errors if a dynamic target does not exist).
+	if !IsSet(%name%)
+		return
+	if (%name% != value) {
+		%name% := value
+		try IniWrite value, "settings\nm_config.ini", "Kill", SubStr(name, 5)
+	}
+}
+
 ; Poll the AHK state and push any changed values to the web GUI.
 ; This keeps the classic GUI -> web GUI direction in sync for every setting,
 ; including ones whose classic controls do not route through nm_saveConfig.
@@ -1606,6 +1851,9 @@ nm_WebSyncTimer() {
 	global MyWindow
 	if !IsSet(MyWindow)
 		return
+	; Adopt any classic-GUI Kill changes into the Kill* globals first so the snapshot below
+	; pushes them to the web GUI.
+	nm_WebPushClassicKill()
 	static last := Map()
 	try {
 		snap := nm_WebSnapshot()

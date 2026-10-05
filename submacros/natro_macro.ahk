@@ -1165,6 +1165,12 @@ nm_importConfig()
 	nm_SettingsCatalog := config
 }
 nm_importConfig()
+; Reconcile the authoritative [Kill] settings onto the legacy classic GUI globals before
+; MainGui is constructed (its controls read those globals via the "Checked"/value options),
+; and rewrite the [Kill] section that nm_importConfig()'s full-file rewrite drops. Without
+; this the old UI showed stale "Off" values (and the runtime used stale globals) until a
+; Kill control was touched. See BootstrapGUI/BootstrapGUI.ahk -> nm_WebSyncKillToClassic.
+nm_WebSyncKillToClassic()
 ; Mirror the saved window state onto the new WebView GUI. The classic GUI applies
 ; these in its own constructor further down, but MyWindow is created above.
 try MyWindow.Opt((AlwaysOnTop ? "+" : "-") "AlwaysOnTop")
