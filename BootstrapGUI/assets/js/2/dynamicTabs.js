@@ -805,6 +805,8 @@ function handleAhkMessage(event) {
         console.log('[ahk-msg] version', msg.version || 'unknown');
         // Live macro version for the header (same VersionID the classic GUI shows).
         if (msg.natroVersion) $('#headerVersion').text('v' + msg.natroVersion);
+        // Reflect the saved Classic/New GUI choice on the header switch.
+        if (msg.guiMode) applyGuiModeFromAhk(msg.guiMode);
         // Refresh the pattern dropdown(s) BEFORE the tabs are (re)built so the clones
         // already contain every pattern on disk.
         if (msg.patternList && window.applyPatternList) window.applyPatternList(msg.patternList);
@@ -927,6 +929,9 @@ function handleAhkMessage(event) {
     } else if (msg.type === 'tab') {
         // classic GUI tab changed -> switch the web sidebar pill
         showWebTab(msg.value);
+    } else if (msg.type === 'guiMode') {
+        // AHK-side mode change (toggle flipped in the classic GUI) -> sync the switch.
+        applyGuiModeFromAhk(msg.value);
     } else {
         console.log('[ahk-msg] unhandled type', msg.type);
     }
@@ -1218,3 +1223,32 @@ $(document).ready(function () {
 });
 
 window.showWebTab = showWebTab;
+
+// --- Classic <-> New GUI toggle (header switch) -----------------------------
+// Guard so an AHK-originated update does not bounce straight back to AHK (loop).
+var suppressGuiModeSend = false;
+
+function sendGuiModeToAhk(useNew) {
+    if (!(window.chrome && window.chrome.webview && window.chrome.webview.hostObjects && window.chrome.webview.hostObjects.ahkUpdateState)) return;
+    try {
+        var obj = window.chrome.webview.hostObjects.ahkUpdateState;
+        obj.func(JSON.stringify({ type: 'guiMode', value: useNew ? 'new' : 'classic' }));
+    } catch (e) {
+        console.warn('[ahk-send] guiMode failed', e);
+    }
+}
+
+function applyGuiModeFromAhk(value) {
+    var useNew = (String(value).toLowerCase() === 'new');
+    suppressGuiModeSend = true;
+    $('#guiModeToggle').prop('checked', useNew);
+    suppressGuiModeSend = false;
+}
+
+$(function () {
+    $(document).on('change', '#guiModeToggle', function () {
+        if (suppressGuiModeSend) return;
+        sendGuiModeToAhk($(this).is(':checked'));
+    });
+});
+window.sendGuiModeToAhk = sendGuiModeToAhk;

@@ -641,6 +641,7 @@ nm_importConfig()
 		, "HideErrors", 1
 		, "DebugHotkey", "F6"
 		, "ReleaseChannel", "Stable"
+		, "UseNewGUI", 0
 	)
 
 	config["Status"] := Map("StatusLogReverse", 0
@@ -2659,6 +2660,7 @@ nm_AutoUpdateHandler(req)
 			MainGui["VersionText"].Move(494 - VersionWidth), MainGui["VersionText"].Redraw()
 			MainGui["ImageGitHubLink"].Move(494 - VersionWidth - 23), MainGui["ImageGitHubLink"].Redraw()
 			MainGui["ImageDiscordLink"].Move(494 - VersionWidth - 48), MainGui["ImageDiscordLink"].Redraw()
+			try MainGui["GuiToggleSwitch"].Move(494 - VersionWidth - 88), MainGui["GuiToggleSwitch"].Redraw()
 			try MainGui["SecretButton"].Move(494-VersionWidth-104), MainGui["SecretButton"].Redraw()
 
 			if (LatestVer != IgnoreUpdateVersion)
@@ -2813,7 +2815,10 @@ nm_MajorUpdateHelp(*)
 OnExit(GetOut)
 MainGui := Gui((AlwaysOnTop ? "+AlwaysOnTop " : "") "+Border +OwnDialogs", "Natro Macro (Loading 0%)")
 WinSetTransparent 255-floor(GuiTransparency*2.55), MainGui
-MainGui.Show("x" GuiX " y" GuiY " w490 h275")
+; Only show the classic window up front in Classic mode; in New mode it is created hidden and
+; nm_ApplyGuiMode() (further down, once the Gather-row switch exists) keeps it hidden while the
+; WebView window is shown instead.
+MainGui.Show("x" GuiX " y" GuiY " w490 h275" (UseNewGUI ? " Hide" : ""))
 SetLoadingProgress(percent) => MainGui.Title := "Natro Macro (Loading " Round(percent) "%)"
 MainGui.OnEvent("Close", (*) => ExitApp())
 MainGui.SetFont("s8 cDefault Norm", "Tahoma")
@@ -2837,6 +2842,18 @@ DllCall("DeleteObject", "Ptr", hBM)
 pBM := Gdip_BitmapConvertGray(bitmaps["discordgui"]), hBM := Gdip_CreateHBITMAPFromBitmap(pBM)
 MainGui.Add("Picture", "+BackgroundTrans x" 494-VersionWidth-48 " y263 w21 h16 vImageDiscordLink", "HBITMAP:*" hBM)
 Gdip_DisposeImage(pBM), DllCall("DeleteObject", "Ptr", hBM)
+
+; Classic <-> New GUI toggle, sitting to the left of the version/link icons.
+; "Modern UI:" label sits to the left of the pill, sized to match the link icons.
+toggleX := 494 - VersionWidth - 48 - 40
+MainGui.SetFont("s8 cDefault Norm", "Tahoma")
+MainGui.Add("Text", "x" (toggleX - 68) " y264 w64 +right +BackgroundTrans vGuiToggleLabel", "Modern UI:")
+MainGui.SetFont("s8 cDefault Norm", "Tahoma")
+toggleBM := nm_CreateGuiSwitchBitmap(UseNewGUI ? 1 : 0)
+(GuiCtrl := MainGui.Add("Picture", "+BackgroundTrans x" toggleX " y260 w36 h20 vGuiToggleSwitch", "HBITMAP:*" toggleBM)).OnEvent("Click", nm_GuiToggleClicked)
+DllCall("DeleteObject", "Ptr", toggleBM)
+; The switch control now exists, so show whichever GUI the saved mode selects.
+nm_ApplyGuiMode()
 
 ; control buttons
 MainGui.SetFont("s8 cDefault Norm", "Tahoma")
@@ -4761,6 +4778,14 @@ nm_saveConfig(GuiCtrl, *){
 		try nm_PostKillUpdate(GuiCtrl.Name, val)
 		OutputDebug "[ahk] send kill " GuiCtrl.Name "=" val
 	}
+}
+
+; Classic <-> New GUI switch (Gather tab bottom row)
+nm_GuiToggleClicked(GuiCtrl, *) {
+	global UseNewGUI
+	; Act on button RELEASE, not press (a Picture's Click can fire on mouse-down).
+	KeyWait "LButton"
+	nm_SetGuiMode(!UseNewGUI)
 }
 
 ;link buttons

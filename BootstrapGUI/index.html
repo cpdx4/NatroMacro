@@ -112,6 +112,13 @@
                             <div class="btn-group" role="group"><button class="btn btn-success border rounded-2" id="Start-Button" type="button" style="margin-right: 4px;"> Start (F1)</button><button class="btn btn-warning border rounded-2" id="Pause-Button" type="button" style="margin-right: 4px;"> Pause (F2)</button><button class="btn btn-danger border rounded-2" id="Stop-Button" type="button" style="margin-right: 4px;"> Stop (F3)</button><button class="btn btn-light border rounded-2" id="AutoClick-Button" type="button" style="margin-right: 4px;"> AutoClick (F4)</button><button class="btn btn-light border rounded-2" id="Status-Button" type="button" style="margin-right: 4px;"> Status (F5)</button></div>
                         </div>
                     </div>
+                    <!-- "Modern UI:" label + pill switch, sitting immediately to the left of the version block. -->
+                    <div class="d-flex align-items-center" style="height: 58px;margin-right: 12px;">
+                        <span class="text-light" style="font-size: 11px;line-height: 1;white-space: nowrap;margin-right: 0;padding-right: 4px;">Modern UI:</span>
+                        <div class="form-check form-switch m-0 d-flex align-items-center" style="padding-left: 0;min-height: 0;">
+                            <input type="checkbox" class="form-check-input" id="guiModeToggle" title="Switch between the Classic GUI and the New GUI" style="position: static;float: none;margin: 0;">
+                        </div>
+                    </div>
                     <!-- App name + version pinned to the right corner of the app. -->
                     <div class="d-flex flex-column justify-content-center align-items-end" style="height: 58px;padding-right: 6px;line-height: 1.05;overflow: hidden;">
                         <div style="font-size: 11px;font-weight: 600;color: #f8f9fa;white-space: nowrap;">Natro Macro</div>
@@ -4146,7 +4153,7 @@
     <script src="https://cdn.jsdelivr.net/npm/ms-dropdown@4.0.3/dist/js/dd.min.js"></script>
     <script src="https://code.jquery.com/ui/1.13.2/jquery-ui.js"></script>
     <script src="assets/js/2/patternInterpreter.js?v=4"></script>
-    <script src="assets/js/2/dynamicTabs.js?v=6"></script>
+    <script src="assets/js/2/dynamicTabs.js?v=7"></script>
     <script src="assets/js/2/killTabHandlers.js"></script>
     <script src="assets/js/2/boostTabHandlers.js"></script>
     <script src="assets/js/2/collectTabHandlers.js"></script>

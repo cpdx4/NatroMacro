@@ -59,7 +59,10 @@ MyWindow.OnEvent("Close", (*) => ExitApp())
 ; caches index.html / its scripts. Append a per-run query so a restart always picks
 ; up edited HTML (CSS is inline, and the changed scripts carry their own ?v= token).
 MyWindow.Navigate("BootstrapGUI/index.html?v=" A_TickCount)
-MyWindow.Debug()
+; --- DevTools (F12) auto-open: commented out, kept for later debugging ---
+; This call opened the WebView2 developer tools on every launch. Re-enable the line below
+; (or call MyWindow.Debug() from a hotkey) when the DevTools are needed again.
+; MyWindow.Debug()
 ;`NavigationCompleted` is now a `WebViewCtrl` handler method (proxied onto `WebViewGui`), not a GUI event.
 MyWindow.NavigationCompleted((*) => SetTimer(SendBootstrapState, -50))
 MyWindow.AddHostObjectToScript("ahkButtonClick", {func:WebButtonClickEvent})
@@ -67,7 +70,109 @@ MyWindow.AddHostObjectToScript("ahkCopyGlyphCode", {func:CopyGlyphCodeEvent})
 MyWindow.AddHostObjectToScript("ahkFormSubmit", {func:FormSubmitEvent})
 MyWindow.AddHostObjectToScript("ahkUpdateState", {func:WebUpdateStateSafe})
 MyWindow.AddHostObjectToScript("ahkGatherAction", {func:WebGatherActionEvent})
-MyWindow.Show("w1050 h650 Center")
+; Create the WebView window HIDDEN for now: which GUI is visible depends on the persisted
+; [Settings] UseNewGUI flag, which is only loaded later by nm_importConfig(). nm_ApplyGuiMode()
+; shows exactly one of the two windows once the classic MainGui has been built. Showing it with
+; "Hide" (rather than never showing it) still lays the WebView2 control out at its final size,
+; so the page renders correctly the moment the window is really shown.
+MyWindow.Show("w1050 h650 Center Hide")
+}
+
+;///////////////////////////////////////////////////////////////////////////////////////////
+; GUI mode toggle (Classic AHK GUI <-> New WebView2 GUI)
+;///////////////////////////////////////////////////////////////////////////////////////////
+; Persisted as [Settings] UseNewGUI in settings\nm_config.ini (0 = Classic, the default;
+; 1 = New). Only ONE of MainGui / MyWindow is ever visible: flipping the switch in either
+; GUI calls nm_SetGuiMode(), which swaps the windows, saves the choice and mirrors the new
+; state to the web so its header switch stays in step.
+nm_SetGuiMode(useNew, persist := true) {
+	global UseNewGUI, MainGui, MyWindow
+	UseNewGUI := useNew ? 1 : 0
+	if persist
+		try IniWrite UseNewGUI, "settings\nm_config.ini", "Settings", "UseNewGUI"
+	nm_ShowGuiForCurrentMode()
+	nm_WebBroadcastGuiMode()
+}
+
+; Startup: apply the value nm_importConfig() already loaded, without rewriting the INI.
+nm_ApplyGuiMode() {
+	nm_ShowGuiForCurrentMode()
+	nm_WebBroadcastGuiMode()
+}
+
+; Show exactly one of the two GUI windows for the current UseNewGUI value.
+nm_ShowGuiForCurrentMode() {
+	global UseNewGUI, MainGui, MyWindow
+	local mode
+	mode := UseNewGUI ? 1 : 0
+	if IsSet(MyWindow) && IsObject(MyWindow) {
+		try {
+			if (mode)
+				MyWindow.Show("w1050 h650 Center")
+			else
+				MyWindow.Hide()
+		}
+	}
+	if IsSet(MainGui) && IsObject(MainGui) {
+		; Use WinHide/WinShow (not Gui.Hide/Gui.Show) so the classic window's size is never
+		; re-derived: Gui.Show() re-applied the border every time it was re-shown, which made
+		; the window creep a few pixels bigger on each New -> Classic toggle.
+		try {
+			if (mode) {
+				WinHide("ahk_id " MainGui.Hwnd)
+			} else {
+				WinShow("ahk_id " MainGui.Hwnd)
+				WinActivate("ahk_id " MainGui.Hwnd)
+			}
+		}
+	}
+	nm_UpdateClassicGuiToggle()
+}
+
+; Push the current GUI mode to the WebView so its header switch reflects it.
+nm_WebBroadcastGuiMode() {
+	global MyWindow, UseNewGUI
+	if !IsSet(MyWindow)
+		return
+	try MyWindow.PostWebMessageAsString('{"type":"guiMode","value":"' (UseNewGUI ? "new" : "classic") '"}')
+}
+
+; Swap the classic Gather-row switch graphic to match the current mode.
+nm_UpdateClassicGuiToggle() {
+	global MainGui, UseNewGUI
+	if !IsSet(MainGui) || !IsObject(MainGui)
+		return
+	local ctrl, hBM
+	ctrl := ""
+	try ctrl := MainGui["GuiToggleSwitch"]
+	if !IsObject(ctrl)
+		return
+	hBM := nm_CreateGuiSwitchBitmap(UseNewGUI ? 1 : 0)
+	try ctrl.Value := "HBITMAP:*" hBM
+	DllCall("DeleteObject", "Ptr", hBM)
+}
+
+; Draw a small pill switch (grey = Classic/off, green = New/on) and return its HBITMAP.
+nm_CreateGuiSwitchBitmap(state) {
+	local w := 36, h := 20, bmp, g, brush, knobD, knobX, hBM
+	bmp := Gdip_CreateBitmap(w, h)
+	g := Gdip_GraphicsFromImage(bmp)
+	Gdip_SetSmoothingMode(g, 4)
+	; Track (grey = Classic/off, green = New/on). The corner radius must not exceed half the
+	; rect height, or the rounded-rectangle path degenerates and leaves stray pixels.
+	brush := Gdip_BrushCreateSolid(state ? 0xff4bb543 : 0xffaeb6bf)
+	Gdip_FillRoundedRectangle(g, brush, 0, 0, w - 1, h - 1, (h - 1) // 2)
+	Gdip_DeleteBrush(brush)
+	; Knob with a uniform 2px margin all round.
+	knobD := h - 4
+	knobX := state ? (w - 2 - knobD) : 2
+	brush := Gdip_BrushCreateSolid(0xffffffff)
+	Gdip_FillEllipse(g, brush, knobX, 2, knobD, knobD)
+	Gdip_DeleteBrush(brush)
+	hBM := Gdip_CreateHBITMAPFromBitmap(bmp)
+	Gdip_DisposeImage(bmp)
+	Gdip_DeleteGraphics(g)
+	return hBM
 }
 
 WebButtonClickEvent(button) {
@@ -1161,6 +1266,11 @@ WebUpdateState(payload) {
 		OutputDebug "[ahk] recv misc " key "=" value
 		nm_WebApplyMiscSetting(key, value)
 
+	case "guiMode":
+		; web header switch flipped -> swap Classic <-> New (persist + mirror back).
+		OutputDebug "[ahk] recv guiMode " data["value"]
+		nm_SetGuiMode(StrLower(data["value"]) = "new")
+
 	case "tab":
 		; web sidebar tab clicked -> switch the classic GUI tab
 		nm_WebSelectClassicTab(data["value"])
@@ -1186,6 +1296,7 @@ FormSubmitEvent(source, form) {
 
 SendBootstrapState() {
 	global MyWindow, VersionID, FieldName1, FieldName2, FieldName3, FieldPattern1, FieldPattern2, FieldPattern3
+	global UseNewGUI
 	global FieldPatternSize1, FieldPatternSize2, FieldPatternSize3, FieldPatternReps1, FieldPatternReps2, FieldPatternReps3
 	global FieldDriftCheck1, FieldDriftCheck2, FieldDriftCheck3, FieldPatternShift1, FieldPatternShift2, FieldPatternShift3
 	global FieldPatternInvertFB1, FieldPatternInvertFB2, FieldPatternInvertFB3, FieldPatternInvertLR1, FieldPatternInvertLR2, FieldPatternInvertLR3
@@ -1321,6 +1432,7 @@ SendBootstrapState() {
 			. ',"shrine":' JSON.stringify(snap["Shrine"])
 			. ',"gatherSettings":' JSON.stringify(snap["Gather"])
 			. ',"collectExtras":' JSON.stringify(snap["Collect"])
+			. ',"guiMode":"' (UseNewGUI ? "new" : "classic") '"'
 			. ',"patternList":' JSON.stringify(patternlist) '}'
 		OutputDebug "[ahk] send init: " initJson
 		MyWindow.PostWebMessageAsString(initJson)
