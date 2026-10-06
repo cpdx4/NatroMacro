@@ -1,5 +1,5 @@
 ﻿/**
- * Gummy Boot(strap) Edition - WebView2 GUI bridge.
+ * Natro Macro (Modern UI) - WebView2 GUI bridge.
  *
  * Everything the fork adds on top of the baseline NatroMacro script lives here, so the
  * diff against the baseline is this one new file plus small hook lines in
@@ -49,7 +49,7 @@ nm_BootstrapWebGui() {
 ;locked-down machines), WebView2 startup fails with a visible error rather than writing into the repo.
 WebView2DataDir := nm_PickWebViewDataDir()
 try
-    MyWindow := WebViewGui("+Resize +Caption +MinimizeBox +MaximizeBox", "Natro Macro (Gummy Boot(strap) Edition - CONCEPT)", , {DataDir: WebView2DataDir})
+    MyWindow := WebViewGui("+Resize +Caption +MinimizeBox +MaximizeBox", "Natro Macro (Modern UI)", , {DataDir: WebView2DataDir})
 catch as e {
     MsgBox "Failed to create the WebView2 window.`n`n" e.Message "`n`nDataDir: " WebView2DataDir, "Natro Macro - WebView2 error", 0x10
     ExitApp
