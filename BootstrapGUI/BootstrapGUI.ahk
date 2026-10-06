@@ -1463,10 +1463,13 @@ nm_ApplyWebWindowIcon() {
 	; Render each at its native size so Windows never has to stretch a single bitmap.
 	hSmall := nm_HIconFromPng(path, 16)
 	hBig := nm_HIconFromPng(path, 32)
+	; NOTE: SendMessage takes exactly 4 parameters (hWnd, Msg, wParam, lParam). Passing a
+	; fifth arg makes AHK v2 throw "Parameter list too large", and since the call site is
+	; wrapped in `try`, that error used to be swallowed silently and the icon never changed.
 	if (hSmall >= 1)
-		DllCall("SendMessage", "Ptr", MyWindow.Hwnd, "UInt", 0x0080, "Ptr", 0, "Ptr", hSmall, "Ptr", 0)
+		DllCall("SendMessage", "Ptr", MyWindow.Hwnd, "UInt", 0x0080, "Ptr", 0, "Ptr", hSmall)
 	if (hBig >= 1)
-		DllCall("SendMessage", "Ptr", MyWindow.Hwnd, "UInt", 0x0080, "Ptr", 1, "Ptr", hBig, "Ptr", 0)
+		DllCall("SendMessage", "Ptr", MyWindow.Hwnd, "UInt", 0x0080, "Ptr", 1, "Ptr", hBig)
 }
 
 ; Render a PNG at the given square size and return an HICON (0 on failure).
