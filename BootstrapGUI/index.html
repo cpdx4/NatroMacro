@@ -5,14 +5,54 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, shrink-to-fit=no">
     <title>NatroGUI_BootstrapStudioStarter</title>
+    <!--
+      ==========================================================================
+      ALL CSS/JS IS VENDORED LOCALLY SO THE GUI WORKS FULLY OFFLINE.
+      Do NOT add CDN <link>/<script> tags back - download the file into the
+      matching assets/ folder instead and record it in the table below.
+
+      CASCADE ORDER IS DELIBERATE:
+        framework (Bootstrap) -> third-party plugin CSS -> app CSS (styles.css)
+      Keep assets/css/styles.css LAST so project styles always win.
+      (The old markup loaded Bootstrap 5.3.3 from a CDN *after* styles.css,
+       so Bootstrap silently overrode the project stylesheet. Fixed here.)
+
+      --------------------------------------------------------------------------
+      VENDORED ASSETS AND THEIR UPSTREAM SOURCES (for future updates)
+      --------------------------------------------------------------------------
+      assets/bootstrap/css/bootstrap.min.css              Bootstrap 5.3.3
+          https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css
+      assets/bootstrap/js/bootstrap.min.js                Bootstrap 5.3.3 (needs Popper)
+          https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.min.js
+      assets/vendor/jquery-ui/jquery-ui.min.css           jQuery UI 1.13.3 ("base" theme)
+          https://code.jquery.com/ui/1.13.3/themes/base/jquery-ui.css
+          icons: assets/vendor/jquery-ui/images/ui-icons_*_256x240.png
+          https://code.jquery.com/ui/1.13.3/themes/base/images/
+      assets/vendor/jquery-ui/jquery-ui.min.js            jQuery UI 1.13.3
+          https://code.jquery.com/ui/1.13.3/jquery-ui.min.js
+      assets/vendor/popper/popper.min.js                  Popper 2.11.6 (Bootstrap tooltips/dropdowns)
+          https://cdn.jsdelivr.net/npm/@popperjs/core@2.11.6/dist/umd/popper.min.js
+      assets/vendor/bootstrap-select/bootstrap-select.min.css   bootstrap-select 1.14.0-beta3
+          https://cdn.jsdelivr.net/npm/bootstrap-select@1.14.0-beta3/dist/css/bootstrap-select.min.css
+      assets/vendor/ms-dropdown/dd.min.css               ms-dropdown 4.0.3
+          https://cdn.jsdelivr.net/npm/ms-dropdown@4.0.3/dist/css/dd.min.css
+      assets/vendor/ms-dropdown/dd.min.js                ms-dropdown 4.0.3
+          https://cdn.jsdelivr.net/npm/ms-dropdown@4.0.3/dist/js/dd.min.js
+      assets/js/jquery.min.js                            jQuery 3.7.1
+          https://code.jquery.com/jquery-3.7.1.min.js
+      assets/js/1/bootstrap-select(v1.14.0-gamma1).js    bootstrap-select 1.14.0-gamma1 (local build)
+
+      To update: re-download from the URL above into the SAME local path, then
+      bump the version in this comment. Keep a library's CSS and JS in lockstep.
+      --------------------------------------------------------------------------
+    -->
     <link rel="stylesheet" href="assets/bootstrap/css/bootstrap.min.css">
+    <link rel="stylesheet" href="assets/vendor/jquery-ui/jquery-ui.min.css">
+    <link rel="stylesheet" href="assets/vendor/bootstrap-select/bootstrap-select.min.css">
+    <link rel="stylesheet" href="assets/vendor/ms-dropdown/dd.min.css">
     <link rel="stylesheet" href="assets/fonts/fontawesome-all.min.css">
     <link rel="stylesheet" href="assets/css/animate.min.css">
     <link rel="stylesheet" href="assets/css/styles.css">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-select@1.14.0-beta3/dist/css/bootstrap-select.min.css">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ms-dropdown@4.0.3/dist/css/dd.min.css">
-    <link rel="stylesheet" href="https://code.jquery.com/ui/1.13.2/themes/base/jquery-ui.css">
     <style>
         /* Disabled control styling for parent-child relationships */
         .disabled-control {
@@ -4145,13 +4185,14 @@
             </div>
         </div>
     </div>
+    <!-- Vendored locally, no CDN. Sources & versions are listed in the <head>. -->
     <script src="assets/js/jquery.min.js"></script>
+    <script src="assets/vendor/jquery-ui/jquery-ui.min.js"></script>
+    <script src="assets/vendor/popper/popper.min.js"></script>
     <script src="assets/bootstrap/js/bootstrap.min.js"></script>
-    <script src="assets/js/bs-init.js"></script>
+    <script src="assets/vendor/ms-dropdown/dd.min.js"></script>
     <script src="assets/js/1/bootstrap-select(v1.14.0-gamma1).js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.11.6/dist/umd/popper.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/ms-dropdown@4.0.3/dist/js/dd.min.js"></script>
-    <script src="https://code.jquery.com/ui/1.13.2/jquery-ui.js"></script>
+    <script src="assets/js/bs-init.js"></script>
     <script src="assets/js/2/patternInterpreter.js?v=4"></script>
     <script src="assets/js/2/dynamicTabs.js?v=7"></script>
     <script src="assets/js/2/killTabHandlers.js"></script>
