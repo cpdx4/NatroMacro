@@ -91,20 +91,8 @@ function updateDiscordPanelUi() {
 
 function sendStatusUpdate(key, value) {
     if (suppressStatusSend) return;
-    if (!(window.chrome && window.chrome.webview && window.chrome.webview.hostObjects && window.chrome.webview.hostObjects.ahkUpdateState)) {
-        console.warn('[ahk-send] status host not ready');
-        return;
-    }
     console.log('[ahk-send] status', key, value);
-    try {
-        var obj = window.chrome.webview.hostObjects.ahkUpdateState;
-        var promise = obj.func(JSON.stringify({ type: 'status', key: key, value: value }));
-        if (promise && promise.then) {
-            promise.then(function () { }, function (err) { console.warn('[ahk-send] status:', err); });
-        }
-    } catch (err) {
-        console.warn('[ahk-send] status error:', err);
-    }
+    window.AhkBridge.updateState('status', key, value);
 }
 
 function formatDuration(seconds) {
@@ -231,21 +219,11 @@ function restoreStatusTabState(payload) {
 }
 
 function setupStatusMessageListener() {
-    if (window.chrome && window.chrome.webview) {
-        window.chrome.webview.addEventListener('message', function (event) {
-            try {
-                const message = event.data;
-                const msg = (typeof message === 'string') ? JSON.parse(message) : message;
-                if (msg && msg.type === 'init' && msg.status) {
-                    restoreStatusTabState(JSON.stringify(msg.status));
-                } else if (msg && msg.type === 'status') {
-                    applyStatusFromAhk(msg.key, msg.value);
-                }
-            } catch (e) {
-                console.warn('[ahk-msg] error processing status message:', e);
-            }
-        });
-    }
+    // Transport is handled by the shared bridge module (assets/js/2/bridge.js).
+    window.AhkBridge.registerTab('status', 'status', {
+        applyFromAhk: applyStatusFromAhk,
+        restoreState: restoreStatusTabState
+    });
 }
 
 $(document).ready(function () {

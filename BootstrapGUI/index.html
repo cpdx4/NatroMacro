@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html data-bs-theme="light" lang="en">
 
 <head>
@@ -53,87 +53,6 @@
     <link rel="stylesheet" href="assets/fonts/fontawesome-all.min.css">
     <link rel="stylesheet" href="assets/css/animate.min.css">
     <link rel="stylesheet" href="assets/css/styles.css">
-    <style>
-        /* Disabled control styling for parent-child relationships */
-        .disabled-control {
-            opacity: 0.5 !important;
-            cursor: not-allowed !important;
-            pointer-events: none !important;
-        }
-        
-        .disabled-section {
-            opacity: 0.6;
-        }
-        
-        .disabled-section .form-check-label,
-        .disabled-section .btn,
-        .disabled-section .form-control,
-        .disabled-section input[type="number"],
-        .disabled-section input[type="text"] {
-            opacity: 0.7;
-            cursor: not-allowed;
-        }
-        
-        .disabled-section .btn-check:disabled + .btn {
-            opacity: 0.6;
-            cursor: not-allowed;
-        }
-        /* --- Layout: keep the left nav fixed; only the right pane scrolls ---
-           Every flexbox ancestor of #field-icon-buttons needs `min-height: 0`,
-           otherwise it grows to fit its content and the page (not the pane) overflows. */
-        html, body { height: 100%; margin: 0; }
-        body.d-flex { height: 100vh; overflow: hidden; }
-        body > .container-fluid { height: 100%; max-height: 100%; overflow: hidden; }
-        body > .container-fluid > div:first-child { flex: 0 0 auto; }
-        .row.flex-grow-1 { flex: 1 1 auto; min-height: 0; overflow: hidden; }
-        /* col-auto would shrink-to-fit its content; force it to fill the row instead. */
-        #main-content-column { flex: 1 1 auto; min-width: 0; max-width: 100%; height: 100%; min-height: 0; overflow: hidden; }
-        #main-content-column > .d-flex { height: 100%; min-height: 0; align-items: stretch; }
-        #sidebar-tabitems { align-self: flex-start; flex: 0 0 auto; max-height: 100%; overflow-y: auto; }
-        #field-icon-buttons { flex: 1 1 auto; min-width: 0; height: 100%; max-height: 100%; overflow-y: auto; overflow-x: auto; }
-        /* The status log is a plain <div>; keep the classic log's newlines. */
-        #statusLog { white-space: pre-wrap; word-break: break-word; }
-        /* Quest detail/progress text keeps the classic multi-line layout. */
-        .quest-details { white-space: pre-wrap; word-break: break-word; }
-        /* Nectar priority rows are a .btn-group; keep the number input above the
-           bootstrap-select button so the "min %" field stays clickable/editable. */
-        .btn-group > input[type="number"] { position: relative; z-index: 2; }
-        /* Bootstrap .row carries negative side gutters (-12px) that assume a padded
-           parent. A few panes place a .row directly inside a padding-less wrapper, so
-           the row stayed ~24px wider than the pane and produced a horizontal
-           scrollbar. Cancel the gutter for those direct-child rows; the .col padding
-           still provides the visual spacing. */
-        #field-icon-buttons > .tab-pane > .row,
-        #field-icon-buttons > .tab-pane > .bg-light > .row {
-            margin-left: 0;
-            margin-right: 0;
-        }
-        /* --- Trim the left nav column ---------------------------------------
-           Reclaim the container/row/col gutters plus the nav-link padding so the
-           sidebar hugs the window edge (leaving only a sliver of left margin)
-           and the freed-up width goes to the content pane. */
-        body > .container-fluid {
-            padding-left: 4px;
-            padding-right: 4px;
-        }
-        .row.flex-grow-1 {
-            margin-left: 0;
-            margin-right: 0;
-        }
-        #main-content-column {
-            padding-left: 0;
-            padding-right: 0;
-        }
-        #sidebar-tabitems {
-            padding-left: 0;
-            padding-right: 6px !important; /* override .pe-3 (1rem) */
-            min-width: 0 !important;       /* override inline min-width: 135px */
-        }
-        #sidebar-tabitems .nav-link {
-            padding-left: 4px;
-            padding-right: 4px;
-        }
-    </style>
 </head>
 
 <body class="d-flex">
@@ -4194,17 +4113,18 @@
     <script src="assets/vendor/ms-dropdown/dd.min.js"></script>
     <script src="assets/js/1/bootstrap-select(v1.14.0-gamma1).js"></script>
     <script src="assets/js/bs-init.js"></script>
+    <script src="assets/js/2/bridge.js?v=1"></script>
     <script src="assets/js/2/patternInterpreter.js?v=4"></script>
-    <script src="assets/js/2/dynamicTabs.js?v=7"></script>
-    <script src="assets/js/2/killTabHandlers.js?v=8"></script>
-    <script src="assets/js/2/boostTabHandlers.js?v=8"></script>
-    <script src="assets/js/2/collectTabHandlers.js?v=8"></script>
-    <script src="assets/js/2/plantersTabHandlers.js?v=8"></script>
-    <script src="assets/js/2/questsTabHandlers.js?v=8"></script>
-    <script src="assets/js/2/gatherTabHandlers.js?v=8"></script>
-    <script src="assets/js/2/statusTabHandlers.js?v=8"></script>
-    <script src="assets/js/2/settingsTabHandlers.js?v=8"></script>
-    <script src="assets/js/2/miscTabHandlers.js?v=8"></script>
+    <script src="assets/js/2/dynamicTabs.js?v=8"></script>
+    <script src="assets/js/2/killTabHandlers.js?v=9"></script>
+    <script src="assets/js/2/boostTabHandlers.js?v=9"></script>
+    <script src="assets/js/2/collectTabHandlers.js?v=9"></script>
+    <script src="assets/js/2/plantersTabHandlers.js?v=9"></script>
+    <script src="assets/js/2/questsTabHandlers.js?v=9"></script>
+    <script src="assets/js/2/gatherTabHandlers.js?v=9"></script>
+    <script src="assets/js/2/statusTabHandlers.js?v=9"></script>
+    <script src="assets/js/2/settingsTabHandlers.js?v=9"></script>
+    <script src="assets/js/2/miscTabHandlers.js?v=9"></script>
 </body>
 
 </html>

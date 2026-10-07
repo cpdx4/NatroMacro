@@ -155,17 +155,8 @@ function initializeBoostTabHandlers() {
 
 function sendBoostUpdate(key, value) {
     if (suppressBoostSend) return;
-    if (!(window.chrome && window.chrome.webview && window.chrome.webview.hostObjects && window.chrome.webview.hostObjects.ahkUpdateState)) {
-        console.warn('[ahk-send] boost host not ready');
-        return;
-    }
-    try {
-        var obj = window.chrome.webview.hostObjects.ahkUpdateState;
-        var promise = obj.func(JSON.stringify({ type: 'boost', key: key, value: value }));
-        if (promise && promise.then) promise.then(function () { }, function (err) { console.warn('[ahk-send] boost:', err); });
-    } catch (err) {
-        console.warn('[ahk-send] boost error:', err);
-    }
+    // Transport is handled by the shared bridge module (assets/js/2/bridge.js).
+    window.AhkBridge.updateState('boost', key, value);
 }
 
 /* ------------------------------------------------------------------ */

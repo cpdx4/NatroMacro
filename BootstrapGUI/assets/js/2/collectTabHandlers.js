@@ -212,20 +212,9 @@ function firstOptionValue($sel) {
 
 function sendCollectExtraUpdate(key, value) {
     if (suppressCollectExtraSend) return;
-    if (!(window.chrome && window.chrome.webview && window.chrome.webview.hostObjects && window.chrome.webview.hostObjects.ahkUpdateState)) {
-        console.warn('[ahk-send] collect host not ready');
-        return;
-    }
     console.log('[ahk-send] collect', key, value);
-    try {
-        var obj = window.chrome.webview.hostObjects.ahkUpdateState;
-        var promise = obj.func(JSON.stringify({ type: 'collect', key: key, value: value }));
-        if (promise && promise.then) {
-            promise.then(function () { }, function (err) { console.warn('[ahk-send] collect:', err); });
-        }
-    } catch (err) {
-        console.warn('[ahk-send] collect error:', err);
-    }
+    // Transport is handled by the shared bridge module (assets/js/2/bridge.js).
+    window.AhkBridge.updateState('collect', key, value);
 }
 
 /* ------------------------------------------------------------------ */

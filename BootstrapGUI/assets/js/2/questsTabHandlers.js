@@ -57,20 +57,8 @@ function initializeQuestsTabHandlers() {
 
 function sendQuestsUpdate(key, value) {
     if (suppressQuestsSend) return;
-    if (!(window.chrome && window.chrome.webview && window.chrome.webview.hostObjects && window.chrome.webview.hostObjects.ahkUpdateState)) {
-        console.warn('[ahk-send] quests host not ready');
-        return;
-    }
     console.log('[ahk-send] quests', key, value);
-    try {
-        var obj = window.chrome.webview.hostObjects.ahkUpdateState;
-        var promise = obj.func(JSON.stringify({ type: 'quests', key: key, value: value }));
-        if (promise && promise.then) {
-            promise.then(function () { }, function (err) { console.warn('[ahk-send] quests:', err); });
-        }
-    } catch (err) {
-        console.warn('[ahk-send] quests error:', err);
-    }
+    window.AhkBridge.updateState('quests', key, value);
 }
 
 function applyQuestsFromAhk(key, value) {
@@ -109,21 +97,11 @@ function restoreQuestsTabState(payload) {
 }
 
 function setupQuestsMessageListener() {
-    if (window.chrome && window.chrome.webview) {
-        window.chrome.webview.addEventListener('message', function (event) {
-            try {
-                const message = event.data;
-                const msg = (typeof message === 'string') ? JSON.parse(message) : message;
-                if (msg && msg.type === 'init' && msg.quests) {
-                    restoreQuestsTabState(JSON.stringify(msg.quests));
-                } else if (msg && msg.type === 'quests') {
-                    applyQuestsFromAhk(msg.key, msg.value);
-                }
-            } catch (e) {
-                console.warn('[ahk-msg] error processing quests message:', e);
-            }
-        });
-    }
+    // Transport is handled by the shared bridge module (assets/js/2/bridge.js).
+    window.AhkBridge.registerTab('quests', 'quests', {
+        applyFromAhk: applyQuestsFromAhk,
+        restoreState: restoreQuestsTabState
+    });
 }
 
 $(document).ready(function () {

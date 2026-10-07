@@ -126,20 +126,8 @@ function updateAutoStartStatus() {
 
 function sendMiscUpdate(key, value) {
     if (suppressMiscSend) return;
-    if (!(window.chrome && window.chrome.webview && window.chrome.webview.hostObjects && window.chrome.webview.hostObjects.ahkUpdateState)) {
-        console.warn('[ahk-send] misc host not ready');
-        return;
-    }
     console.log('[ahk-send] misc', key, value);
-    try {
-        var obj = window.chrome.webview.hostObjects.ahkUpdateState;
-        var promise = obj.func(JSON.stringify({ type: 'misc', key: key, value: value }));
-        if (promise && promise.then) {
-            promise.then(function () { }, function (err) { console.warn('[ahk-send] misc:', err); });
-        }
-    } catch (err) {
-        console.warn('[ahk-send] misc error:', err);
-    }
+    window.AhkBridge.updateState('misc', key, value);
 }
 
 /* ------------------------------------------------------------------ */
@@ -179,21 +167,11 @@ function restoreMiscTabState(payload) {
 }
 
 function setupMiscMessageListener() {
-    if (window.chrome && window.chrome.webview) {
-        window.chrome.webview.addEventListener('message', function (event) {
-            try {
-                const message = event.data;
-                const msg = (typeof message === 'string') ? JSON.parse(message) : message;
-                if (msg && msg.type === 'init' && msg.misc) {
-                    restoreMiscTabState(JSON.stringify(msg.misc));
-                } else if (msg && msg.type === 'misc') {
-                    applyMiscFromAhk(msg.key, msg.value);
-                }
-            } catch (e) {
-                console.warn('[ahk-msg] error processing misc message:', e);
-            }
-        });
-    }
+    // Transport is handled by the shared bridge module (assets/js/2/bridge.js).
+    window.AhkBridge.registerTab('misc', 'misc', {
+        applyFromAhk: applyMiscFromAhk,
+        restoreState: restoreMiscTabState
+    });
 }
 
 $(document).ready(function () {

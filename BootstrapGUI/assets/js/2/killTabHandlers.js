@@ -269,43 +269,13 @@ function toggleChildControls(relationship) {
  */
 function sendKillUpdate(key, value) {
     // Don't send updates while AHK is updating the UI
-    if (suppressKillSend) {
-        return;
-    }
-
-    if (!(window.chrome && window.chrome.webview && window.chrome.webview.hostObjects && window.chrome.webview.hostObjects.ahkUpdateState)) {
-        console.warn('[ahk-send] kill host not ready');
-        return;
-    }
-
-    // Ensure value is proper type for JSON serialization
+    if (suppressKillSend) return;
+    // Preserve the original coercion: booleans become 0/1 for AHK.
     let jsonValue = value;
-    if (typeof value === 'string') {
-        // String values stay as strings
-        jsonValue = value;
-    } else if (typeof value === 'boolean') {
-        // Convert boolean to 0/1
-        jsonValue = value ? 1 : 0;
-    } else if (typeof value === 'number') {
-        jsonValue = value;
-    } else {
-        jsonValue = value || 0;
-    }
-
+    if (typeof value === 'boolean') jsonValue = value ? 1 : 0;
+    else if (typeof value !== 'string' && typeof value !== 'number') jsonValue = value || 0;
     console.log('[ahk-send] kill', key, jsonValue, '(type: ' + typeof jsonValue + ')');
-    try {
-        var obj = window.chrome.webview.hostObjects.ahkUpdateState;
-        var promise = obj.func(JSON.stringify({ type: 'kill', key: key, value: jsonValue }));
-        // attach a no-op rejection handler to prevent unhandled rejection
-        if (promise && promise.then) {
-            promise.then(
-                function() { },
-                function(err) { console.warn('[ahk-send] kill:', err); }
-            );
-        }
-    } catch (err) {
-        console.warn('[ahk-send] kill error:', err);
-    }
+    window.AhkBridge.updateState('kill', key, jsonValue);
 }
 
 /**
@@ -497,32 +467,10 @@ function updateKillTabValues(payload) {
  * @param {Object} data - Data to send
  */
 function sendToAHK(type, data) {
-    try {
-        // Check if ahkUpdateState host object is available
-        if (!(window.chrome && window.chrome.webview && window.chrome.webview.hostObjects && window.chrome.webview.hostObjects.ahkUpdateState)) {
-            console.warn('[ahk-send] ahkUpdateState host not ready, skipping');
-            return;
-        }
-
-        const payload = {
-            type: type,
-            ...data
-        };
-
-        const obj = window.chrome.webview.hostObjects.ahkUpdateState;
-        const promise = obj.func(JSON.stringify(payload));
-
-        // Attach a no-op rejection handler to prevent unhandled rejection
-        if (promise && promise.then) {
-            promise.then(
-                function() { console.log('[ahk-send] ' + type + ' ok'); },
-                function(err) { console.warn('[ahk-send] ' + type + ':', err); }
-            );
-        }
-        console.log('[ahk-send] ' + type, payload);
-    } catch (e) {
-        console.warn('[ahk-send] error:', e);
-    }
+    // Transport is handled by the shared bridge module (assets/js/2/bridge.js).
+    const payload = Object.assign({ type: type }, data);
+    console.log('[ahk-send] ' + type, payload);
+    window.AhkBridge.send('ahkUpdateState', payload);
 }
 
 // Initialize on document ready
@@ -536,46 +484,23 @@ $(document).ready(function() {
 });
 
 /**
- * Setup WebMessage listener for receiving state updates from AHK
- * Handles both init messages (first load) and individual kill field updates (real-time sync)
+ * Re-apply the Kill init snapshot (idempotent) and run the one-time wiring.
  */
-function setupWebMessageListener() {
-    if (window.chrome && window.chrome.webview) {
-        window.chrome.webview.addEventListener('message', function(event) {
-            try {
-                const message = event.data;
-                
-                // Parse the message - SendBootstrapState sends JSON strings
-                let msg;
-                if (typeof message === 'string') {
-                    msg = JSON.parse(message);
-                } else {
-                    msg = message;
-                }
-                
-                // Handle init message (first load with all settings)
-                if (msg && msg.type === 'init' && msg.kill) {
-                    console.log('[ahk-msg] received init with kill settings');
-            
-                    // Idempotent: a repeat init (GUI mode toggle) must re-apply the snapshot,
-                    // but the one-time control wiring only needs to run once.
-                    updateKillTabValues(msg.kill);
-                    if (!hasKillInitApplied) {
-                        setupParentChildControls();
-                        hasKillInitApplied = true;
-                    }
-                }
-                // Handle individual kill field updates (real-time sync)
-                else if (msg && msg.type === 'kill') {
-                    console.log('[ahk-msg] received kill update:', msg.key, '=', msg.value);
-                    applyKillFromAhk(msg.key, msg.value);
-                }
-            } catch (e) {
-                console.warn('[ahk-msg] error processing message:', e);
-            }
-        });
-        console.log('[ahk-msg] listener registered for Kill tab');
+function restoreKillTabState(payload) {
+    const data = (typeof payload === 'string') ? JSON.parse(payload) : payload;
+    updateKillTabValues(data);
+    if (!hasKillInitApplied) {
+        setupParentChildControls();
+        hasKillInitApplied = true;
     }
+}
+
+function setupWebMessageListener() {
+    // Transport is handled by the shared bridge module (assets/js/2/bridge.js).
+    window.AhkBridge.registerTab('kill', 'kill', {
+        applyFromAhk: applyKillFromAhk,
+        restoreState: restoreKillTabState
+    });
 }
 
 /**

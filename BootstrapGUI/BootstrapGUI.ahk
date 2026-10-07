@@ -17,6 +17,8 @@
 ; submacros/natro_macro.ahk. Provides nm_IniWriteSection(), which updates a whole INI
 ; section with one read + one write instead of one read/write per key.
 #Include "%A_ScriptDir%\..\lib\nm_IniWriteSection.ahk"
+; Bridge protocol constant + tolerant version check (see BootstrapGUI/README.md).
+#Include "%A_ScriptDir%\..\BootstrapGUI\lib\Bridge.ahk"
 
 ;///////////////////////////////////////////////////////////////////////////////////////////
 ; WebView2 GUI bootstrap
@@ -501,6 +503,10 @@ WebUpdateState(payload) {
 		return
 	}
 
+	; Tolerant protocol version check (see BootstrapGUI/README.md): accepts older
+	; pages and logs a newer version without rejecting the message.
+	nm_BridgeCheckVersion(data)
+
 	switch data["type"] {
 		case "gatherFields":
 			OutputDebug "[ahk] recv gatherFields"
@@ -538,64 +544,15 @@ WebUpdateState(payload) {
 		case "gatherField":
 			OutputDebug "[ahk] recv gatherField " data["num"] " " data["key"] "=" data["value"]
 			num := data["num"], key := data["key"], value := data["value"]
-			if (num = 1) {
-				switch key {
-					case "pattern": FieldPattern1 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldPattern1"), MainGui["FieldPattern1"].Text := value
-					case "size": FieldPatternSize1 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldPatternSize1")
-					case "reps": FieldPatternReps1 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldPatternReps1")
-					case "drift": FieldDriftCheck1 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldDriftCheck1")
-					case "shift": FieldPatternShift1 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldPatternShift1")
-					case "invertfb": FieldPatternInvertFB1 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldPatternInvertFB1")
-					case "invertlr": FieldPatternInvertLR1 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldPatternInvertLR1")
-					case "rotdir": FieldRotateDirection1 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldRotateDirection1")
-					case "rottime": FieldRotateTimes1 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldRotateTimes1")
-					case "mins": FieldUntilMins1 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldUntilMins1")
-					case "pack": FieldUntilPack1 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldUntilPack1")
-					case "return": FieldReturnType1 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldReturnType1")
-					case "sprinkloc": FieldSprinklerLoc1 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldSprinklerLoc1")
-					case "sprdist": FieldSprinklerDist1 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldSprinklerDist1")
-				}
-			}
-			else if (num = 2) {
-				switch key {
-					case "pattern": FieldPattern2 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldPattern2"), MainGui["FieldPattern2"].Text := value
-					case "size": FieldPatternSize2 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldPatternSize2")
-					case "reps": FieldPatternReps2 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldPatternReps2")
-					case "drift": FieldDriftCheck2 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldDriftCheck2")
-					case "shift": FieldPatternShift2 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldPatternShift2")
-					case "invertfb": FieldPatternInvertFB2 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldPatternInvertFB2")
-					case "invertlr": FieldPatternInvertLR2 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldPatternInvertLR2")
-					case "rotdir": FieldRotateDirection2 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldRotateDirection2")
-					case "rottime": FieldRotateTimes2 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldRotateTimes2")
-					case "mins": FieldUntilMins2 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldUntilMins2")
-					case "pack": FieldUntilPack2 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldUntilPack2")
-					case "return": FieldReturnType2 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldReturnType2")
-					case "sprinkloc": FieldSprinklerLoc2 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldSprinklerLoc2")
-					case "sprdist": FieldSprinklerDist2 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldSprinklerDist2")
-				}
-			}
-			else if (num = 3) {
-				switch key {
-					case "pattern": FieldPattern3 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldPattern3"), MainGui["FieldPattern3"].Text := value
-					case "size": FieldPatternSize3 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldPatternSize3")
-					case "reps": FieldPatternReps3 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldPatternReps3")
-					case "drift": FieldDriftCheck3 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldDriftCheck3")
-					case "shift": FieldPatternShift3 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldPatternShift3")
-					case "invertfb": FieldPatternInvertFB3 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldPatternInvertFB3")
-					case "invertlr": FieldPatternInvertLR3 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldPatternInvertLR3")
-					case "rotdir": FieldRotateDirection3 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldRotateDirection3")
-					case "rottime": FieldRotateTimes3 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldRotateTimes3")
-					case "mins": FieldUntilMins3 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldUntilMins3")
-					case "pack": FieldUntilPack3 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldUntilPack3")
-					case "return": FieldReturnType3 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldReturnType3")
-					case "sprinkloc": FieldSprinklerLoc3 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldSprinklerLoc3")
-					case "sprdist": FieldSprinklerDist3 := value, IniWrite(value, "settings\nm_config.ini", "Gather", "FieldSprinklerDist3")
-				}
-			}
 
-			; Mirror the new value into the classic GUI (web -> classic), and cover the
-			; per-field keys the hand-written cases above don't handle
-			; (rotdir / sprinkloc / sprdist). Re-writing the global + INI is harmless.
+			; The per-field classic mirror (global + INI + GUI) is handled in ONE place
+			; by the gmap loop below. The three per-number switch blocks that previously
+			; duplicated it were removed: their key set is identical to gmap, which ran
+			; afterwards anyway.
+
+			; The single source of truth for every per-field gather key: map the web key
+			; to its classic global/INI/GUI name, then set the global, persist to [Gather]
+			; and mirror the classic control. (gmap also covers rotdir / sprinkloc / sprdist.)
 			if (num >= 1 && num <= 3) {
 				gmap := Map("pattern", "FieldPattern"
 					, "size", "FieldPatternSize", "reps", "FieldPatternReps"
@@ -608,6 +565,10 @@ WebUpdateState(payload) {
 					vname := gmap[key] num
 					try %vname% := value
 					try IniWrite value, "settings\nm_config.ini", "Gather", vname
+					; The old per-number switch blocks updated the pattern dropdown text
+					; directly, before nm_UpdateGUIVar(); keep that exact ordering.
+					if (key = "pattern")
+						try MainGui["FieldPattern" num].Text := value
 					try nm_UpdateGUIVar(vname)
 				}
 			}
@@ -615,75 +576,26 @@ WebUpdateState(payload) {
 		case "collect":
 			key := data["key"], value := data["value"]
 			OutputDebug "[ahk] recv collect " key "=" value
-			if (key = "MondoBuffCheck") {
-				MondoBuffCheck := value ? 1 : 0
-				IniWrite MondoBuffCheck, "settings\nm_config.ini", "Collect", "MondoBuffCheck"
-				try MainGui["MondoBuffCheck"].Value := MondoBuffCheck
-			}
-			else if (key = "MondoAction") {
-				MondoAction := value
-				IniWrite MondoAction, "settings\nm_config.ini", "Collect", "MondoAction"
-				try MainGui["MondoAction"].Text := MondoAction
-			}
-			else if (key = "MondoLootDirection") {
-				MondoLootDirection := value
-				IniWrite MondoLootDirection, "settings\nm_config.ini", "Collect", "MondoLootDirection"
-				try MainGui["MondoLootDirection"].Text := MondoLootDirection
-			}
-			else if (key = "AntPassCheck") {
-				AntPassCheck := value ? 1 : 0
-				IniWrite AntPassCheck, "settings\nm_config.ini", "Collect", "AntPassCheck"
-				try MainGui["AntPassCheck"].Value := AntPassCheck
-			}
-			else if (key = "ClockCheck") {
-				ClockCheck := value ? 1 : 0
-				IniWrite ClockCheck, "settings\nm_config.ini", "Collect", "ClockCheck"
-				try MainGui["ClockCheck"].Value := ClockCheck
-			}
-			else if (key = "RoboPassCheck") {
-				RoboPassCheck := value ? 1 : 0
-				IniWrite RoboPassCheck, "settings\nm_config.ini", "Collect", "RoboPassCheck"
-				try MainGui["RoboPassCheck"].Value := RoboPassCheck
-			}
-			else if (key = "HoneystormCheck") {
-				HoneystormCheck := value ? 1 : 0
-				IniWrite HoneystormCheck, "settings\nm_config.ini", "Collect", "HoneystormCheck"
-				try MainGui["HoneystormCheck"].Value := HoneystormCheck
-			}
-			else if (key = "HoneyDisCheck") {
-				HoneyDisCheck := value ? 1 : 0
-				IniWrite HoneyDisCheck, "settings\nm_config.ini", "Collect", "HoneyDisCheck"
-				try MainGui["HoneyDisCheck"].Value := HoneyDisCheck
-			}
-			else if (key = "TreatDisCheck") {
-				TreatDisCheck := value ? 1 : 0
-				IniWrite TreatDisCheck, "settings\nm_config.ini", "Collect", "TreatDisCheck"
-				try MainGui["TreatDisCheck"].Value := TreatDisCheck
-			}
-			else if (key = "BlueberryDisCheck") {
-				BlueberryDisCheck := value ? 1 : 0
-				IniWrite BlueberryDisCheck, "settings\nm_config.ini", "Collect", "BlueberryDisCheck"
-				try MainGui["BlueberryDisCheck"].Value := BlueberryDisCheck
-			}
-			else if (key = "StrawberryDisCheck") {
-				StrawberryDisCheck := value ? 1 : 0
-				IniWrite StrawberryDisCheck, "settings\nm_config.ini", "Collect", "StrawberryDisCheck"
-				try MainGui["StrawberryDisCheck"].Value := StrawberryDisCheck
-			}
-			else if (key = "CoconutDisCheck") {
-				CoconutDisCheck := value ? 1 : 0
-				IniWrite CoconutDisCheck, "settings\nm_config.ini", "Collect", "CoconutDisCheck"
-				try MainGui["CoconutDisCheck"].Value := CoconutDisCheck
-			}
-			else if (key = "RoyalJellyDisCheck") {
-				RoyalJellyDisCheck := value ? 1 : 0
-				IniWrite RoyalJellyDisCheck, "settings\nm_config.ini", "Collect", "RoyalJellyDisCheck"
-				try MainGui["RoyalJellyDisCheck"].Value := RoyalJellyDisCheck
-			}
-			else if (key = "GlueDisCheck") {
-				GlueDisCheck := value ? 1 : 0
-				IniWrite GlueDisCheck, "settings\nm_config.ini", "Collect", "GlueDisCheck"
-				try MainGui["GlueDisCheck"].Value := GlueDisCheck
+			; Collect booleans + their two text keys, declared once in a registry instead
+			; of a 14-branch if/else chain. Blender / Shrine / Beesmas / Memory-Match keys
+			; and the generic fallback are handled by the chain below.
+			collectRegistry := Map(
+				"MondoBuffCheck", "check", "MondoAction", "text", "MondoLootDirection", "text"
+				, "AntPassCheck", "check", "ClockCheck", "check", "RoboPassCheck", "check"
+				, "HoneystormCheck", "check", "HoneyDisCheck", "check", "TreatDisCheck", "check"
+				, "BlueberryDisCheck", "check", "StrawberryDisCheck", "check"
+				, "CoconutDisCheck", "check", "RoyalJellyDisCheck", "check", "GlueDisCheck", "check")
+			if collectRegistry.Has(key) {
+				if (collectRegistry[key] = "check") {
+					cval := value ? 1 : 0
+					%key% := cval
+					IniWrite cval, "settings\nm_config.ini", "Collect", key
+					try MainGui[key].Value := cval
+				} else {
+					%key% := value
+					IniWrite value, "settings\nm_config.ini", "Collect", key
+					try MainGui[key].Text := value
+				}
 			}
 			; --- Blender slots (item / amount / repeat) ---
 			; NOTE the prefix lengths: "BlenderItem"=11, "BlenderIndex"=12, "BlenderAmount"=13.
@@ -1466,9 +1378,6 @@ SendBootstrapState() {
 	appVersion := "2025-12-30T" A_Hour ":" A_Min ":" A_Sec
 	try {
 		; coerce numeric fields to 0 when blank
-		p1dist := (FieldSprinklerDist1 = "") ? 0 : FieldSprinklerDist1
-		p2dist := (FieldSprinklerDist2 = "") ? 0 : FieldSprinklerDist2
-		p3dist := (FieldSprinklerDist3 = "") ? 0 : FieldSprinklerDist3
 		p1dist := (FieldSprinklerDist1 = "") ? 0 : FieldSprinklerDist1
 		p2dist := (FieldSprinklerDist2 = "") ? 0 : FieldSprinklerDist2
 		p3dist := (FieldSprinklerDist3 = "") ? 0 : FieldSprinklerDist3

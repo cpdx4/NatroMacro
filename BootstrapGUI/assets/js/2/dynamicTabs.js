@@ -632,26 +632,19 @@ function rebuildGatherTabs() {
 window.rebuildGatherTabs = rebuildGatherTabs;
 
 
-// Tell the tab buidler function (buildTab) which tab to add
-$('#btnAddBamboo').click(       function (e) {	buildTab("bamboo");	});
-$('#btnAddBlueflower').click(   function (e) {	buildTab("blueflower");	});
-$('#btnAddCactus').click(       function (e) {	buildTab("cactus");	});
-$('#btnAddClover').click(       function (e) {	buildTab("clover");	});
-$('#btnAddCoconut').click(      function (e) {	buildTab("coconut");	});
-$('#btnAddDandelion').click(    function (e) {	buildTab("dandelion");	});
-$('#btnAddMountain').click(     function (e) {	buildTab("mountaintop");	});
-$('#btnAddMushroom').click(     function (e) {	buildTab("mushroom");	});
-$('#btnAddPepper').click(       function (e) {	buildTab("pepper");	});
-$('#btnAddPineapple').click(    function (e) {	buildTab("pineapple");	});
-$('#btnAddPinetree').click(     function (e) {	buildTab("pinetree");	});
-$('#btnAddPumpkin').click(      function (e) {	buildTab("pumpkin");	});
-$('#btnAddRose').click(         function (e) {	buildTab("rose");	});
-$('#btnAddSpider').click(       function (e) {	buildTab("spider");	});
-$('#btnAddStrawberry').click(   function (e) {	buildTab("strawberry");	});
-$('#btnAddStump').click(        function (e) {	buildTab("stump");	});
-$('#btnAddSunflower').click(    function (e) {	buildTab("sunflower");	});
-
-$('#btnAddBamboo, #btnAddBlueflower, #btnAddCactus, #btnAddClover, #btnAddCoconut, #btnAddDandelion, #btnAddMountain, #btnAddMushroom, #btnAddPepper, #btnAddPineapple, #btnAddPinetree, #btnAddPumpkin, #btnAddRose, #btnAddSpider, #btnAddStrawberry, #btnAddStump, #btnAddSunflower').click(function(){
+// The 17 field icons are bound with ONE delegated handler driven by a data map.
+// Previously this was 17 near-identical .click() bindings plus a second 17-selector
+// binding that re-bound sendGatherFieldsToAhk.
+const GATHER_FIELD_BUTTONS = {
+    '#btnAddBamboo': 'bamboo', '#btnAddBlueflower': 'blueflower', '#btnAddCactus': 'cactus',
+    '#btnAddClover': 'clover', '#btnAddCoconut': 'coconut', '#btnAddDandelion': 'dandelion',
+    '#btnAddMountain': 'mountaintop', '#btnAddMushroom': 'mushroom', '#btnAddPepper': 'pepper',
+    '#btnAddPineapple': 'pineapple', '#btnAddPinetree': 'pinetree', '#btnAddPumpkin': 'pumpkin',
+    '#btnAddRose': 'rose', '#btnAddSpider': 'spider', '#btnAddStrawberry': 'strawberry',
+    '#btnAddStump': 'stump', '#btnAddSunflower': 'sunflower'
+};
+$(document).on('click', Object.keys(GATHER_FIELD_BUTTONS).join(','), function () {
+    buildTab(GATHER_FIELD_BUTTONS['#' + this.id]);
     setTimeout(sendGatherFieldsToAhk, 10);
 });
 

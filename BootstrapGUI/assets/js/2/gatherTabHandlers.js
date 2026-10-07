@@ -19,12 +19,7 @@ function initializeGatherTabHandlers() {
 
 function sendGatherUpdate(key, value) {
     if (suppressGatherSend) return;
-    if (!(window.chrome && window.chrome.webview && window.chrome.webview.hostObjects && window.chrome.webview.hostObjects.ahkUpdateState)) return;
-    try {
-        var obj = window.chrome.webview.hostObjects.ahkUpdateState;
-        var p = obj.func(JSON.stringify({ type: 'gather', key: key, value: value }));
-        if (p && p.then) p.then(function () { }, function (e) { console.warn('[ahk-send] gather:', e); });
-    } catch (e) { console.warn('[ahk-send] gather error:', e); }
+    window.AhkBridge.updateState('gather', key, value);
 }
 
 function applyGatherFromAhk(key, value) {
@@ -105,21 +100,12 @@ function restoreGatherTabState(payload) {
 }
 
 function setupGatherMessageListener() {
-    if (window.chrome && window.chrome.webview) {
-        window.chrome.webview.addEventListener('message', function (event) {
-            try {
-                const message = event.data;
-                const msg = (typeof message === 'string') ? JSON.parse(message) : message;
-                if (msg && msg.type === 'init' && msg.gatherSettings) {
-                    restoreGatherTabState(JSON.stringify(msg.gatherSettings));
-                } else if (msg && msg.type === 'gather') {
-                    applyGatherFromAhk(msg.key, msg.value);
-                }
-            } catch (e) {
-                console.warn('[ahk-msg] error processing gather message:', e);
-            }
-        });
-    }
+    // Transport is handled by the shared bridge module (assets/js/2/bridge.js).
+    // Note: the Gather *global* settings arrive under the `gatherSettings` init key.
+    window.AhkBridge.registerTab('gather', 'gatherSettings', {
+        applyFromAhk: applyGatherFromAhk,
+        restoreState: restoreGatherTabState
+    });
 }
 
 $(document).ready(function () {

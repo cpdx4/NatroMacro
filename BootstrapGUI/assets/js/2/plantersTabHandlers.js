@@ -312,17 +312,8 @@ function activatePlantersSubTab(href) {
 
 function sendPlantsUpdate(key, value) {
     if (suppressPlantsSend) return;
-    if (!(window.chrome && window.chrome.webview && window.chrome.webview.hostObjects && window.chrome.webview.hostObjects.ahkUpdateState)) {
-        console.warn('[ahk-send] plants host not ready');
-        return;
-    }
-    try {
-        var obj = window.chrome.webview.hostObjects.ahkUpdateState;
-        var promise = obj.func(JSON.stringify({ type: 'plants', key: key, value: value }));
-        if (promise && promise.then) promise.then(function () { }, function (err) { console.warn('[ahk-send] plants:', err); });
-    } catch (err) {
-        console.warn('[ahk-send] plants error:', err);
-    }
+    // Transport is handled by the shared bridge module (assets/js/2/bridge.js).
+    window.AhkBridge.updateState('plants', key, value);
 }
 
 /* ------------------------------------------------------------------ */
@@ -505,21 +496,12 @@ function restorePlantersTabState(payload) {
 }
 
 function setupPlantsMessageListener() {
-    if (window.chrome && window.chrome.webview) {
-        window.chrome.webview.addEventListener('message', function (event) {
-            try {
-                const message = event.data;
-                const msg = (typeof message === 'string') ? JSON.parse(message) : message;
-                if (msg && msg.type === 'init' && msg.plants) {
-                    restorePlantersTabState(JSON.stringify(msg.plants));
-                } else if (msg && msg.type === 'plants') {
-                    queuePlantsFromAhk(msg.key, msg.value);
-                }
-            } catch (e) {
-                console.warn('[ahk-msg] error processing plants message:', e);
-            }
-        });
-    }
+    // Transport is handled by the shared bridge module (assets/js/2/bridge.js).
+    // Live updates are buffered through queuePlantsFromAhk (batched refresh).
+    window.AhkBridge.registerTab('plants', 'plants', {
+        applyFromAhk: queuePlantsFromAhk,
+        restoreState: restorePlantersTabState
+    });
 }
 
 $(document).ready(function () {

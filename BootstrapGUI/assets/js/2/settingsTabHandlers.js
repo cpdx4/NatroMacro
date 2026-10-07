@@ -63,20 +63,8 @@ function initializeSettingsTabHandlers() {
 
 function sendSettingsUpdate(key, value) {
     if (suppressSettingsSend) return;
-    if (!(window.chrome && window.chrome.webview && window.chrome.webview.hostObjects && window.chrome.webview.hostObjects.ahkUpdateState)) {
-        console.warn('[ahk-send] settings host not ready');
-        return;
-    }
     console.log('[ahk-send] settings', key, value);
-    try {
-        var obj = window.chrome.webview.hostObjects.ahkUpdateState;
-        var promise = obj.func(JSON.stringify({ type: 'settings', key: key, value: value }));
-        if (promise && promise.then) {
-            promise.then(function () { }, function (err) { console.warn('[ahk-send] settings:', err); });
-        }
-    } catch (err) {
-        console.warn('[ahk-send] settings error:', err);
-    }
+    window.AhkBridge.updateState('settings', key, value);
 }
 
 function applySettingsFromAhk(key, value) {
@@ -120,21 +108,11 @@ function restoreSettingsTabState(payload) {
 }
 
 function setupSettingsMessageListener() {
-    if (window.chrome && window.chrome.webview) {
-        window.chrome.webview.addEventListener('message', function (event) {
-            try {
-                const message = event.data;
-                const msg = (typeof message === 'string') ? JSON.parse(message) : message;
-                if (msg && msg.type === 'init' && msg.settings) {
-                    restoreSettingsTabState(JSON.stringify(msg.settings));
-                } else if (msg && msg.type === 'settings') {
-                    applySettingsFromAhk(msg.key, msg.value);
-                }
-            } catch (e) {
-                console.warn('[ahk-msg] error processing settings message:', e);
-            }
-        });
-    }
+    // Transport is handled by the shared bridge module (assets/js/2/bridge.js).
+    window.AhkBridge.registerTab('settings', 'settings', {
+        applyFromAhk: applySettingsFromAhk,
+        restoreState: restoreSettingsTabState
+    });
 }
 
 $(document).ready(function () {
