@@ -485,7 +485,7 @@ function applyManualCycle(slot, cycle, kind, value) {
 }
 
 function restorePlantersTabState(payload) {
-    if (hasPlantsInitApplied) return;
+    // Idempotent: a repeat init (GUI mode toggle) must re-apply the snapshot.
     try {
         const data = JSON.parse(payload);
         const prev = suppressPlantsSend;
@@ -510,7 +510,7 @@ function setupPlantsMessageListener() {
             try {
                 const message = event.data;
                 const msg = (typeof message === 'string') ? JSON.parse(message) : message;
-                if (msg && msg.type === 'init' && msg.plants && !hasPlantsInitApplied) {
+                if (msg && msg.type === 'init' && msg.plants) {
                     restorePlantersTabState(JSON.stringify(msg.plants));
                 } else if (msg && msg.type === 'plants') {
                     queuePlantsFromAhk(msg.key, msg.value);

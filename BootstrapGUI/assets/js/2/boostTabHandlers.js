@@ -307,7 +307,7 @@ function setSelectVal(sel, val) {
 }
 
 function restoreBoostTabState(payload) {
-    if (hasBoostInitApplied) return;
+    // Idempotent: a repeat init (GUI mode toggle) must re-apply the snapshot.
     try {
         const data = JSON.parse(payload);
         for (const [key, value] of Object.entries(data)) applyBoostFromAhk(key, value);

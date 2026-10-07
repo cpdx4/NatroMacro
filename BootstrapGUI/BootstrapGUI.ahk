@@ -98,21 +98,35 @@ nm_SetGuiMode(useNew, persist := true) {
 	UseNewGUI := useNew ? 1 : 0
 	if persist
 		try IniWrite UseNewGUI, "settings\nm_config.ini", "Settings", "UseNewGUI"
-	nm_ShowGuiForCurrentMode()
+	; Reconcile the newly-shown GUI with the single source of truth (globals/INI) before it appears.
+	nm_ShowGuiForCurrentMode(true)
 	nm_WebBroadcastGuiMode()
 }
 
 ; Startup: apply the value nm_importConfig() already loaded, without rewriting the INI.
+; No reconcile is needed here - both windows were just built from the loaded globals.
 nm_ApplyGuiMode() {
-	nm_ShowGuiForCurrentMode()
+	nm_ShowGuiForCurrentMode(false)
 	nm_WebBroadcastGuiMode()
 }
 
 ; Show exactly one of the two GUI windows for the current UseNewGUI value.
-nm_ShowGuiForCurrentMode() {
-	global UseNewGUI, MainGui, MyWindow
+; reconcile := true repaints the target GUI from the source-of-truth globals (every user toggle
+; passes true; startup passes false because both windows are already fresh).
+;
+; The two targets are reconciled at DIFFERENT times on purpose:
+;  - Modern: repaint BEFORE showing. While the Modern UI was hidden the live poll was gated off,
+;    so it missed classic-side edits; showing it first would flash stale values.
+;  - Classic: show FIRST, then refresh on a short timer. Its controls are already kept live by
+;    nm_WebApplySetting(), and the full refresh touches hundreds of controls plus [Kill] INI
+;    writes - running that synchronously before the swap is what made the toggle look like it
+;    did nothing for a moment.
+nm_ShowGuiForCurrentMode(reconcile := false) {
+	global UseNewGUI, MainGui, MyWindow, nm_RepaintUnlock
 	local mode
 	mode := UseNewGUI ? 1 : 0
+	if (reconcile && mode)
+		try nm_ReconcileGuiMode(1)
 	if IsSet(MyWindow) && IsObject(MyWindow) {
 		try {
 			if (mode)
@@ -135,6 +149,125 @@ nm_ShowGuiForCurrentMode() {
 		}
 	}
 	nm_UpdateClassicGuiToggle()
+	; Classic target: swap FIRST, then run the refresh in small chunks on a timer. Reuse the
+	; startup loading indicator for feedback - lock the controls and drive the title through
+	; "Natro Macro (Loading n%)" - so it mirrors the classic GUI's first load instead of the
+	; window appearing to freeze. Chunking keeps the UI responsive and the % animating; the
+	; whole sweep takes ~2 s because it touches several hundred controls.
+	if (reconcile && !mode)
+		nm_BeginClassicRepaint()
+}
+
+; Start the chunked classic refresh (see nm_ShowGuiForCurrentMode). Locks the controls and
+; shows "Natro Macro (Loading 0%)" (unless the GUI is already locked, e.g. the macro is paused,
+; in which case the lock is left alone), then drives nm_RepaintChunk() until the sweep is done.
+;
+; NOTE: the per-field FieldName1..3 keys are deliberately skipped. nm_UpdateGUIVar() routes them
+; through nm_FieldSelectN() -> nm_FieldDefaults(), which RESETS that field's pattern/size to the
+; built-in defaults; re-applying them would wipe the user's per-field settings. Those controls are
+; already mirrored live by nm_WebApplySetting() when the field is edited in the Modern UI.
+nm_BeginClassicRepaint() {
+	global MainGui, nm_RList, nm_RIdx, nm_RepaintUnlock
+	if !IsSet(MainGui) || !IsObject(MainGui)
+		return
+	try
+		snap := nm_WebSnapshot()
+	catch
+		return
+	; Flatten to a deduped list of items: the snapshot repeats several sections (lowercase
+	; hand-built + capitalised catalog) and derived keys, and nm_UpdateGUIVar() only needs the
+	; key, so each name is processed once.
+	seen := Map(), nm_RList := []
+	for section, obj in snap {
+		for k, v in obj {
+			if seen.Has(k)
+				continue
+			seen[k] := 1
+			nm_RList.Push(Map("s", section, "k", k, "v", v))
+		}
+	}
+	nm_RIdx := 1
+	nm_RepaintUnlock := true
+	try {
+		if (MainGui["CurrentFieldUp"].Enabled = 0)
+			nm_RepaintUnlock := false
+		else
+			nm_LockTabs()
+	}
+	try SetLoadingProgress(0)
+	SetTimer(nm_RepaintChunk, -1)
+}
+
+; Process a slice of the classic refresh, then reschedule until done. ~25 items/tick keeps each
+; pass short enough that the GUI still responds while the title % counts up.
+nm_RepaintChunk() {
+	global MainGui, nm_RList, nm_RIdx, nm_RepaintUnlock
+	local it, s, k, v, n
+	if !IsSet(nm_RList) || !IsObject(nm_RList)
+		return
+	n := 0
+	while (nm_RIdx <= nm_RList.Length && n < 25) {
+		it := nm_RList[nm_RIdx]
+		s := it["s"], k := it["k"], v := it["v"]
+		if !(k = "FieldName1" || k = "FieldName2" || k = "FieldName3") {
+			if (s = "Kill") {
+				try nm_WebKillToClassic(k, v)
+			} else if (!nm_ClassicCtrlMatches(k, v)) {
+				; Skip controls that already display this value - most do, because the live
+				; web -> classic mirroring (nm_WebApplySetting) already applied them.
+				try nm_UpdateGUIVar(k)
+			}
+		}
+		nm_RIdx++, n++
+	}
+	try SetLoadingProgress(Round((nm_RIdx - 1) / nm_RList.Length * 100))
+	if (nm_RIdx <= nm_RList.Length) {
+		SetTimer(nm_RepaintChunk, -1)
+		return
+	}
+	; Done: refresh the composite widgets and clear the loading indicator.
+	try mp_UpdateControls()
+	try nm_HotbarWhile()
+	try nm_NectarPriority()
+	try SetLoadingProgress(100)
+	try MainGui.Title := "Natro Macro"
+	if (IsSet(nm_RepaintUnlock) && nm_RepaintUnlock)
+		try nm_LockTabs(0)
+	nm_RList := "", nm_RIdx := 1
+}
+
+; Modern target reconcile: fold any classic-only state into the globals, then push a full init
+; snapshot so the WebView matches the globals exactly. (The Classic target is the chunked
+; nm_BeginClassicRepaint().) The continuous nm_WebSyncTimer() poll is gated to the Modern-visible
+; case, so this is what guarantees the two GUIs stay consistent when the user flips between them.
+nm_ReconcileGuiMode(*) {
+	try nm_WebPushClassicKill()
+	try SetTimer(SendBootstrapState, -50)
+}
+
+
+; True when the classic control named <k> already displays <v>, so the refresh can skip it.
+; Keys with no classic control, or whose displayed value is a transform of the global (e.g. the
+; GuiTransparency UpDown, FieldPatternSize text), return false and are re-applied by
+; nm_UpdateGUIVar() as before - harmless, just not skipped.
+nm_ClassicCtrlMatches(k, v) {
+	global MainGui
+	local ctrl
+	try
+		ctrl := MainGui[k]
+	catch
+		return false
+	if !IsObject(ctrl)
+		return false
+	try {
+		switch ctrl.Type, 0 {
+			case "DDL", "Text":
+				return (ctrl.Text = v)
+			default:
+				return (ctrl.Value = v)
+		}
+	}
+	return false
 }
 
 ; Push the current GUI mode to the WebView so its header switch reflects it.
@@ -1971,12 +2104,15 @@ nm_WebSetKillVar(name, value) {
 ; This keeps the classic GUI -> web GUI direction in sync for every setting,
 ; including ones whose classic controls do not route through nm_saveConfig.
 nm_WebSyncTimer() {
-	global MyWindow
+	global MyWindow, UseNewGUI
 	if !IsSet(MyWindow)
 		return
-	; Adopt any classic-GUI Kill changes into the Kill* globals first so the snapshot below
-	; pushes them to the web GUI.
-	nm_WebPushClassicKill()
+	; Option C (reconcile-on-show): only feed the web GUI while it is the visible one. When the
+	; classic GUI is showing there is nothing to update, and the classic -> Modern direction is
+	; reconciled by nm_ReconcileGuiMode() when the Modern UI is shown, so polling would be waste.
+	; (The classic Kill -> global adoption now lives in that reconcile, not here.)
+	if !(IsSet(UseNewGUI) && UseNewGUI)
+		return
 	static last := Map()
 	try {
 		snap := nm_WebSnapshot()

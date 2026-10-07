@@ -236,7 +236,7 @@ function setupStatusMessageListener() {
             try {
                 const message = event.data;
                 const msg = (typeof message === 'string') ? JSON.parse(message) : message;
-                if (msg && msg.type === 'init' && msg.status && !hasStatusInitApplied) {
+                if (msg && msg.type === 'init' && msg.status) {
                     restoreStatusTabState(JSON.stringify(msg.status));
                 } else if (msg && msg.type === 'status') {
                     applyStatusFromAhk(msg.key, msg.value);

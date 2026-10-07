@@ -97,7 +97,7 @@ function applyQuestsFromAhk(key, value) {
 }
 
 function restoreQuestsTabState(payload) {
-    if (hasQuestsInitApplied) return;
+    // Idempotent: a repeat init (GUI mode toggle) must re-apply the snapshot.
     try {
         const data = JSON.parse(payload);
         for (const [key, value] of Object.entries(data)) applyQuestsFromAhk(key, value);
@@ -114,7 +114,7 @@ function setupQuestsMessageListener() {
             try {
                 const message = event.data;
                 const msg = (typeof message === 'string') ? JSON.parse(message) : message;
-                if (msg && msg.type === 'init' && msg.quests && !hasQuestsInitApplied) {
+                if (msg && msg.type === 'init' && msg.quests) {
                     restoreQuestsTabState(JSON.stringify(msg.quests));
                 } else if (msg && msg.type === 'quests') {
                     applyQuestsFromAhk(msg.key, msg.value);

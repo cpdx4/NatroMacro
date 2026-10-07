@@ -108,7 +108,7 @@ function applySettingsFromAhk(key, value) {
 }
 
 function restoreSettingsTabState(payload) {
-    if (hasSettingsInitApplied) return;
+    // Idempotent: a repeat init (GUI mode toggle) must re-apply the snapshot.
     try {
         const data = JSON.parse(payload);
         for (const [key, value] of Object.entries(data)) applySettingsFromAhk(key, value);
@@ -125,7 +125,7 @@ function setupSettingsMessageListener() {
             try {
                 const message = event.data;
                 const msg = (typeof message === 'string') ? JSON.parse(message) : message;
-                if (msg && msg.type === 'init' && msg.settings && !hasSettingsInitApplied) {
+                if (msg && msg.type === 'init' && msg.settings) {
                     restoreSettingsTabState(JSON.stringify(msg.settings));
                 } else if (msg && msg.type === 'settings') {
                     applySettingsFromAhk(msg.key, msg.value);

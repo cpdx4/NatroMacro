@@ -167,7 +167,7 @@ function applyMiscFromAhk(key, value) {
 }
 
 function restoreMiscTabState(payload) {
-    if (hasMiscInitApplied) return;
+    // Idempotent: a repeat init (GUI mode toggle) must re-apply the snapshot.
     try {
         const data = JSON.parse(payload);
         for (const [key, value] of Object.entries(data)) applyMiscFromAhk(key, value);
@@ -184,7 +184,7 @@ function setupMiscMessageListener() {
             try {
                 const message = event.data;
                 const msg = (typeof message === 'string') ? JSON.parse(message) : message;
-                if (msg && msg.type === 'init' && msg.misc && !hasMiscInitApplied) {
+                if (msg && msg.type === 'init' && msg.misc) {
                     restoreMiscTabState(JSON.stringify(msg.misc));
                 } else if (msg && msg.type === 'misc') {
                     applyMiscFromAhk(msg.key, msg.value);

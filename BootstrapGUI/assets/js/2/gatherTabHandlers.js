@@ -93,7 +93,7 @@ function applyGatherFromAhk(key, value) {
 }
 
 function restoreGatherTabState(payload) {
-    if (hasGatherInitApplied) return;
+    // Idempotent: a repeat init (GUI mode toggle) must re-apply the snapshot.
     try {
         const data = JSON.parse(payload);
         for (const [key, value] of Object.entries(data)) applyGatherFromAhk(key, value);
@@ -110,9 +110,8 @@ function setupGatherMessageListener() {
             try {
                 const message = event.data;
                 const msg = (typeof message === 'string') ? JSON.parse(message) : message;
-                if (msg && msg.type === 'init' && msg.gatherSettings && !hasGatherInitApplied) {
+                if (msg && msg.type === 'init' && msg.gatherSettings) {
                     restoreGatherTabState(JSON.stringify(msg.gatherSettings));
-                    hasGatherInitApplied = true;
                 } else if (msg && msg.type === 'gather') {
                     applyGatherFromAhk(msg.key, msg.value);
                 }

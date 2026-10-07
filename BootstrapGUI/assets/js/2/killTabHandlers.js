@@ -557,9 +557,10 @@ function setupWebMessageListener() {
                 if (msg && msg.type === 'init' && msg.kill) {
                     console.log('[ahk-msg] received init with kill settings');
             
-                    // Only apply the incoming kill state once on first init
+                    // Idempotent: a repeat init (GUI mode toggle) must re-apply the snapshot,
+                    // but the one-time control wiring only needs to run once.
+                    updateKillTabValues(msg.kill);
                     if (!hasKillInitApplied) {
-                        updateKillTabValues(msg.kill);
                         setupParentChildControls();
                         hasKillInitApplied = true;
                     }

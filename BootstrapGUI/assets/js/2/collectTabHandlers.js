@@ -310,7 +310,7 @@ function applyCollectExtraFromAhk(key, value) {
 }
 
 function restoreCollectTabState(payload) {
-    if (hasCollectInitApplied) return;
+    // Idempotent: a repeat init (GUI mode toggle) must re-apply the snapshot.
     try {
         const data = JSON.parse(payload);
         for (const [key, value] of Object.entries(data)) applyCollectExtraFromAhk(key, value);
