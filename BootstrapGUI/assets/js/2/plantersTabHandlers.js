@@ -7,6 +7,10 @@
 
 let suppressPlantsSend = false;
 let hasPlantsInitApplied = false;
+// AHK pushes preset/snapshot updates as a burst of individual messages. Buffering them
+// lets us apply the whole batch and refresh bootstrap-select once instead of once per key.
+let pendingPlantsChanges = [];
+let plantsFlushScheduled = false;
 
 /* ------------------------------------------------------------------ */
 /* static maps                                                         */
@@ -325,7 +329,7 @@ function sendPlantsUpdate(key, value) {
 /* apply from AHK                                                      */
 /* ------------------------------------------------------------------ */
 
-function applyPlantsFromAhk(key, value) {
+function applyPlantsFromAhk(key, value, deferRefresh) {
     const prev = suppressPlantsSend;
     suppressPlantsSend = true;
     try {
@@ -363,11 +367,12 @@ function applyPlantsFromAhk(key, value) {
             default:
                 if ((m = /^n([1-5])priority$/.exec(key))) {
                     // setPrioritySelect() also refreshes bootstrap-select (its rendered button
-                    // otherwise keeps showing the previous selection).
-                    setPrioritySelect(m[1], value);
+                    // otherwise keeps showing the previous selection), unless the caller is
+                    // flushing a batch and will refresh once at the end.
+                    setPrioritySelect(m[1], value, deferRefresh);
                     // The classic GUI never allows the same nectar twice; a duplicate in a
                     // later priority must become None/Blank here too.
-                    enforceNectarUniqueness();
+                    enforceNectarUniqueness(deferRefresh);
                 } else if ((m = /^n([1-5])minPercent$/.exec(key))) {
                     const inputIds = { 1: '#inputMondoSeconds-38', 2: '#inputMondoSeconds-43', 3: '#inputMondoSeconds-42', 4: '#inputMondoSeconds-41', 5: '#inputMondoSeconds-40' };
                     $(inputIds[m[1]]).val(value).prop('disabled', false).prop('readonly', false);
@@ -398,30 +403,62 @@ function invertMap(mapObj) {
 
 function prioritySelectFor(i) { return $('select[name="collSel_field1_' + (26 + parseInt(i, 10)) + '"]'); }
 
-function setPrioritySelect(i, name) {
+function setPrioritySelect(i, name, deferRefresh) {
     const $sel = prioritySelectFor(i);
     if (!$sel.length) return;
     $sel.find('option').each(function () {
         if (nectarName($(this).text().trim()) === nectarName(name)) { $sel.val($(this).val()); return false; }
     });
-    if ($sel.hasClass('selectpicker') && $.fn.selectpicker) $sel.selectpicker('refresh');
+    if (!deferRefresh && $sel.hasClass('selectpicker') && $.fn.selectpicker) $sel.selectpicker('refresh');
+}
+
+// Refresh every bootstrap-select priority dropdown once (used after a batch).
+function refreshPrioritySelects() {
+    for (let i = 1; i <= 5; i++) {
+        const $sel = prioritySelectFor(i);
+        if ($sel.length && $sel.hasClass('selectpicker') && $.fn.selectpicker) $sel.selectpicker('refresh');
+    }
 }
 
 // The classic GUI only allows each nectar once; duplicates in later priorities are
 // reset to None. Keep the web GUI (and AHK) consistent with that behaviour.
-function enforceNectarUniqueness() {
+function enforceNectarUniqueness(deferRefresh) {
     const seen = {};
     for (let i = 1; i <= 5; i++) {
         const $sel = prioritySelectFor(i);
         if (!$sel.length) continue;
         const name = nectarName($sel.find('option:selected').text().trim());
         if (name && name !== 'None' && seen[name]) {
-            setPrioritySelect(i, 'None');
+            setPrioritySelect(i, 'None', deferRefresh);
             sendPlantsUpdate('n' + i + 'priority', 'None');
         } else if (name && name !== 'None') {
             seen[name] = true;
         }
     }
+}
+
+// Buffer a burst of AHK plants updates and apply them in one pass. Priorities, min %
+// and the 17 field checks all change at once when a preset is picked, so this collapses
+// ~5 bootstrap-select rebuilds into a single refresh and removes the visible "pop-in".
+function queuePlantsFromAhk(key, value) {
+    pendingPlantsChanges.push([key, value]);
+    if (plantsFlushScheduled) return;
+    plantsFlushScheduled = true;
+    setTimeout(function () {
+        plantsFlushScheduled = false;
+        const batch = pendingPlantsChanges;
+        pendingPlantsChanges = [];
+        if (!batch.length) return;
+        const prev = suppressPlantsSend;
+        suppressPlantsSend = true;
+        try {
+            batch.forEach(function (kv) { applyPlantsFromAhk(kv[0], kv[1], true); });
+            enforceNectarUniqueness(true);
+            refreshPrioritySelects();
+        } finally {
+            suppressPlantsSend = prev;
+        }
+    }, 0);
 }
 
 function applyManualCycle(slot, cycle, kind, value) {
@@ -451,7 +488,15 @@ function restorePlantersTabState(payload) {
     if (hasPlantsInitApplied) return;
     try {
         const data = JSON.parse(payload);
-        for (const [key, value] of Object.entries(data)) applyPlantsFromAhk(key, value);
+        const prev = suppressPlantsSend;
+        suppressPlantsSend = true;
+        try {
+            for (const [key, value] of Object.entries(data)) applyPlantsFromAhk(key, value, true);
+            enforceNectarUniqueness(true);
+            refreshPrioritySelects();
+        } finally {
+            suppressPlantsSend = prev;
+        }
         hasPlantsInitApplied = true;
         console.log('[restore] Planters tab state restored from AHK');
     } catch (e) {
@@ -468,7 +513,7 @@ function setupPlantsMessageListener() {
                 if (msg && msg.type === 'init' && msg.plants && !hasPlantsInitApplied) {
                     restorePlantersTabState(JSON.stringify(msg.plants));
                 } else if (msg && msg.type === 'plants') {
-                    applyPlantsFromAhk(msg.key, msg.value);
+                    queuePlantsFromAhk(msg.key, msg.value);
                 }
             } catch (e) {
                 console.warn('[ahk-msg] error processing plants message:', e);

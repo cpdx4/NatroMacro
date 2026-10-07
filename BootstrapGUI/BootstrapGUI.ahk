@@ -11,6 +11,14 @@
  */
 
 ;///////////////////////////////////////////////////////////////////////////////////////////
+; Batched INI writer (used by nm_NectarPersistPreset below)
+;///////////////////////////////////////////////////////////////////////////////////////////
+; Lives in lib/ and is pulled in here so the fork needs zero changes to the upstream
+; submacros/natro_macro.ahk. Provides nm_IniWriteSection(), which updates a whole INI
+; section with one read + one write instead of one read/write per key.
+#Include "%A_ScriptDir%\..\lib\nm_IniWriteSection.ahk"
+
+;///////////////////////////////////////////////////////////////////////////////////////////
 ; WebView2 GUI bootstrap
 ;///////////////////////////////////////////////////////////////////////////////////////////
 
@@ -2439,6 +2447,12 @@ nm_WebSetNectarPreset(preset) {
 	if (preset = "Custom")
 		return
 	ba_nectarPresetByName(preset)
+	; A preset rewrites the 5 priorities, the 5 min % values and all 17 allowed-field
+	; checkboxes. Without this flush those only reach the web GUI on the next
+	; nm_WebSyncTimer tick (up to 750 ms later), which is what made preset switches
+	; feel like they took ~1 second to "fill out" the dropdowns. Run the diff/push
+	; immediately so the whole Planters state lands in a single batch.
+	try nm_WebSyncTimer()
 }
 
 ba_nectarPresetByName(preset) {
@@ -2469,7 +2483,7 @@ ba_nectarPresetByName(preset) {
 			, "Stump",0, "BlueFlower",1, "Strawberry",1, "Coconut",0, "Dandelion",1, "Bamboo",1, "PineTree",1
 			, "Clover",1, "Cactus",1, "MountainTop",0, "Pepper",1))
 	}
-	ba_saveConfig_()
+	nm_NectarPersistPreset()
 }
 
 nm_NectarPrioritySet(a, b, c, d, e) {
@@ -2480,6 +2494,12 @@ nm_NectarPrioritySet(a, b, c, d, e) {
 	try MainGui["n3Priority"].Text := c
 	try MainGui["n4Priority"].Text := d
 	try MainGui["n5Priority"].Text := e
+	; The classic nm_NectarPreset() calls nm_NectarPriority() right after setting the
+	; priorities. With no control argument it does not mark the preset "Custom"; it
+	; re-normalises the list and re-enables the classic GUI's priority arrows and
+	; min % UpDowns (which nm_NectarPriority() disables after a "None" entry). Mirror
+	; that so both GUIs end up in the same state.
+	try nm_NectarPriority()
 }
 
 nm_NectarMinSet(a, b, c, d, e) {
@@ -2490,17 +2510,72 @@ nm_NectarMinSet(a, b, c, d, e) {
 	try MainGui["n3minPercent"].Text := c
 	try MainGui["n4minPercent"].Text := d
 	try MainGui["n5minPercent"].Text := e
+	; The classic sets the UpDown as well as the label (the UpDown holds value//10).
+	; Keep it in step so the classic GUI does not show a stale minimum after a preset
+	; is applied from the web GUI.
+	try MainGui["n1minPercentUpDown"].Value := a // 10
+	try MainGui["n2minPercentUpDown"].Value := b // 10
+	try MainGui["n3minPercentUpDown"].Value := c // 10
+	try MainGui["n4minPercentUpDown"].Value := d // 10
+	try MainGui["n5minPercentUpDown"].Value := e // 10
 }
 
 nm_NectarFieldChecks(map) {
 	global
 	local name, val, k
+	; Only update the globals/controls here; persistence is handled by the single
+	; batched write in nm_NectarPersistPreset() at the end of ba_nectarPresetByName().
+	; Writing each key with its own IniWrite() added ~180 ms of lag per preset switch.
 	for name, val in map {
 		k := name "FieldCheck"
 		try %k% := val
 		try MainGui[k].Value := val
-		try IniWrite val, "settings\nm_config.ini", "Planters", k
 	}
+}
+
+; Persist the [Planters] keys a nectar preset changes with a SINGLE read + write.
+;
+; The classic code calls ba_saveConfig_() here, which issues ~50 sequential IniWrite()
+; calls. IniWrite() re-reads and rewrites the whole file every time (~10 ms on an
+; ~11.7 KB nm_config.ini), so that call alone cost ~500 ms - the main source of the
+; "presets take half a second to fill out the dropdowns" lag. Only the keys a preset
+; actually touches are written here; every other [Planters] value is unchanged and
+; keeps its existing INI entry. This intentionally does NOT touch natro_macro.ahk, so
+; the upstream ba_saveConfig_() (used by the classic GUI and planter placement) is
+; left completely alone.
+nm_NectarPersistPreset() {
+	global
+	nmPresetKv := Map(
+		"nPreset", nPreset
+		, "n1priority", n1priority
+		, "n2priority", n2priority
+		, "n3priority", n3priority
+		, "n4priority", n4priority
+		, "n5priority", n5priority
+		, "n1minPercent", n1minPercent
+		, "n2minPercent", n2minPercent
+		, "n3minPercent", n3minPercent
+		, "n4minPercent", n4minPercent
+		, "n5minPercent", n5minPercent
+		, "BambooFieldCheck", BambooFieldCheck
+		, "BlueFlowerFieldCheck", BlueFlowerFieldCheck
+		, "CactusFieldCheck", CactusFieldCheck
+		, "CloverFieldCheck", CloverFieldCheck
+		, "CoconutFieldCheck", CoconutFieldCheck
+		, "DandelionFieldCheck", DandelionFieldCheck
+		, "MountainTopFieldCheck", MountainTopFieldCheck
+		, "MushroomFieldCheck", MushroomFieldCheck
+		, "PepperFieldCheck", PepperFieldCheck
+		, "PineTreeFieldCheck", PineTreeFieldCheck
+		, "PineappleFieldCheck", PineappleFieldCheck
+		, "PumpkinFieldCheck", PumpkinFieldCheck
+		, "RoseFieldCheck", RoseFieldCheck
+		, "SpiderFieldCheck", SpiderFieldCheck
+		, "StrawberryFieldCheck", StrawberryFieldCheck
+		, "StumpFieldCheck", StumpFieldCheck
+		, "SunflowerFieldCheck", SunflowerFieldCheck
+	)
+	try nm_IniWriteSection("settings\nm_config.ini", "Planters", nmPresetKv)
 }
 
 nm_WebBlenderItemFromWeb(v) {
