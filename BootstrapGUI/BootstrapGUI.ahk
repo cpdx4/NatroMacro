@@ -1,21 +1,20 @@
 ﻿/**
  * Natro Macro (Modern UI) - WebView2 GUI bridge.
  *
- * Everything the fork adds on top of the baseline NatroMacro script lives here, so the
- * diff against the baseline is this one new file plus small hook lines in
- * submacros/natro_macro.ahk.
+ * The AutoHotkey side of the web GUI: it creates the WebView2 window, dispatches the
+ * messages the page sends, builds the init snapshot, applies settings from the web GUI,
+ * and keeps the classic GUI and the INI files in sync.
  *
  * Included by submacros/natro_macro.ahk *after* the WebViewToo includes, so the
- * WebViewGui / WebViewCtrl classes are already available. Contains function
- * definitions only, plus nm_BootstrapWebGui() which the main script invokes once.
+ * WebViewGui / WebViewCtrl classes are available. Contains function definitions only,
+ * plus nm_BootstrapWebGui() which the main script invokes once.
  */
 
 ;///////////////////////////////////////////////////////////////////////////////////////////
-; Batched INI writer (used by nm_NectarPersistPreset below)
+; Shared AHK modules
 ;///////////////////////////////////////////////////////////////////////////////////////////
-; Lives in lib/ and is pulled in here so the fork needs zero changes to the upstream
-; submacros/natro_macro.ahk. Provides nm_IniWriteSection(), which updates a whole INI
-; section with one read + one write instead of one read/write per key.
+; nm_IniWriteSection() updates a whole INI section with one read + one write instead of one
+; read/write per key (used by nm_NectarPersistPreset below).
 #Include "%A_ScriptDir%\..\lib\nm_IniWriteSection.ahk"
 ; Bridge protocol constant + tolerant version check (see BootstrapGUI/README.md).
 #Include "%A_ScriptDir%\..\BootstrapGUI\lib\Bridge.ahk"
@@ -46,17 +45,13 @@ nm_PickWebViewDataDir() {
 
 nm_BootstrapWebGui() {
 	global MyWindow, WebView2DataDir
-;WebViewToo v1.0.1 (breaking update): `WebviewWindow` was renamed to `WebViewGui`.
-;`Load()` was replaced by `Navigate()` and the title moved to the constructor (native Gui).
-;NOTE: `+ToolWindow` (WS_EX_TOOLWINDOW) is what previously hid this window from the taskbar
-;and Alt+Tab and left only a Close button (no Minimize/Maximize). Use the normal application
-;window style instead so the new GUI shows up as its own taskbar window with Min/Max/Restore.
+; Create the WebView2 window that serves BootstrapGUI/index.html. The style flags give it a
+; normal application window: title bar, taskbar entry, Min/Max/Restore, resizable.
 ;
-;IMPORTANT: always pass an explicit WebView2 DataDir here (see CONTEXT.md). Leaving it empty makes the
-;vendored `WebViewToo_Resources\WebView2.ahk` fall back to the Edge browser's own profile, which is locked
-;whenever Edge runs -> 0x800700AA (ERROR_BUSY). Use a per-user AppData folder ONLY - never the script folder.
-;If the OS denies directory creation there ("Access is denied", as it does for AutoHotkey*.exe on some
-;locked-down machines), WebView2 startup fails with a visible error rather than writing into the repo.
+; A per-user AppData DataDir is required. An empty DataDir makes the vendored WebView2.ahk fall
+; back to Edge's own profile, which is locked whenever Edge runs -> 0x800700AA (ERROR_BUSY), and
+; WebView2 profile data must not be written into the repo. nm_PickWebViewDataDir() returns an
+; AppData folder and fails with a visible error if the OS denies creation of both.
 WebView2DataDir := nm_PickWebViewDataDir()
 try
     MyWindow := WebViewGui("+Resize +Caption +MinimizeBox +MaximizeBox", "Natro Macro (Modern UI)", , {DataDir: WebView2DataDir})
@@ -65,26 +60,21 @@ catch as e {
     ExitApp
 }
 MyWindow.OnEvent("Close", (*) => ExitApp())
-; The GUI is served over the https virtual host "ahk.localhost", so the WebView
-; caches index.html / its scripts. Append a per-run query so a restart always picks
-; up edited HTML (CSS is inline, and the changed scripts carry their own ?v= token).
+; The page is served over the virtual host "ahk.localhost" and is cached, so append a per-run
+; query to force index.html to reload on every launch. The scripts it loads carry their own
+; ?v= tokens (see the bottom of index.html).
 MyWindow.Navigate("BootstrapGUI/index.html?v=" A_TickCount)
-; --- DevTools (F12) auto-open: commented out, kept for later debugging ---
-; This call opened the WebView2 developer tools on every launch. Re-enable the line below
-; (or call MyWindow.Debug() from a hotkey) when the DevTools are needed again.
-; MyWindow.Debug()
-;`NavigationCompleted` is now a `WebViewCtrl` handler method (proxied onto `WebViewGui`), not a GUI event.
+; NavigationCompleted is a WebViewCtrl handler (proxied onto WebViewGui); send the snapshot shortly after.
 MyWindow.NavigationCompleted((*) => SetTimer(SendBootstrapState, -50))
 MyWindow.AddHostObjectToScript("ahkButtonClick", {func:WebButtonClickEvent})
 MyWindow.AddHostObjectToScript("ahkCopyGlyphCode", {func:CopyGlyphCodeEvent})
 MyWindow.AddHostObjectToScript("ahkFormSubmit", {func:FormSubmitEvent})
 MyWindow.AddHostObjectToScript("ahkUpdateState", {func:WebUpdateStateSafe})
 MyWindow.AddHostObjectToScript("ahkGatherAction", {func:WebGatherActionEvent})
-; Create the WebView window HIDDEN for now: which GUI is visible depends on the persisted
-; [Settings] UseNewGUI flag, which is only loaded later by nm_importConfig(). nm_ApplyGuiMode()
-; shows exactly one of the two windows once the classic MainGui has been built. Showing it with
-; "Hide" (rather than never showing it) still lays the WebView2 control out at its final size,
-; so the page renders correctly the moment the window is really shown.
+; Show the WebView window hidden. Which GUI is visible depends on the persisted [Settings]
+; UseNewGUI flag (loaded by nm_importConfig()), and nm_ApplyGuiMode() reveals exactly one of
+; the two windows once the classic MainGui exists. Showing hidden still lays the WebView2
+; control out at its final size, so the page renders correctly the moment it is revealed.
 MyWindow.Show("w1050 h650 Center Hide")
 }
 
@@ -121,8 +111,8 @@ nm_ApplyGuiMode() {
 ;    so it missed classic-side edits; showing it first would flash stale values.
 ;  - Classic: show FIRST, then refresh on a short timer. Its controls are already kept live by
 ;    nm_WebApplySetting(), and the full refresh touches hundreds of controls plus [Kill] INI
-;    writes - running that synchronously before the swap is what made the toggle look like it
-;    did nothing for a moment.
+;    writes, so it runs on a short timer AFTER the swap to keep the window responsive
+;    instead of appearing to freeze.
 nm_ShowGuiForCurrentMode(reconcile := false) {
 	global UseNewGUI, MainGui, MyWindow, nm_RepaintUnlock
 	local mode
@@ -251,7 +241,7 @@ nm_ReconcileGuiMode(*) {
 ; True when the classic control named <k> already displays <v>, so the refresh can skip it.
 ; Keys with no classic control, or whose displayed value is a transform of the global (e.g. the
 ; GuiTransparency UpDown, FieldPatternSize text), return false and are re-applied by
-; nm_UpdateGUIVar() as before - harmless, just not skipped.
+; nm_UpdateGUIVar() anyway; that is harmless, they are simply not skipped.
 nm_ClassicCtrlMatches(k, v) {
 	global MainGui
 	local ctrl
@@ -352,9 +342,9 @@ WebButtonClickEvent(button) {
 			return blc_mutations()
 		case "misc-bee-list":
 			return nm_GenerateBeeList()
-		; --- Misc tab: tools that are now embedded in the web GUI ---
-		; These "popups" are no longer opened from the web GUI, but the classic
-		; entry points are kept for backwards compatibility.
+		; --- Misc tab: classic-only launchers ---
+		; The web GUI embeds these tools directly and never sends these ids; the handlers
+		; remain so the classic entry points stay callable.
 		case "misc-calculators":
 			return nm_BSSCalculators()
 		case "misc-ticket-calc":
@@ -545,10 +535,8 @@ WebUpdateState(payload) {
 			OutputDebug "[ahk] recv gatherField " data["num"] " " data["key"] "=" data["value"]
 			num := data["num"], key := data["key"], value := data["value"]
 
-			; The per-field classic mirror (global + INI + GUI) is handled in ONE place
-			; by the gmap loop below. The three per-number switch blocks that previously
-			; duplicated it were removed: their key set is identical to gmap, which ran
-			; afterwards anyway.
+			; Every per-field gather key flows through the gmap loop below, which maps the
+			; web key to its classic global/INI/GUI name for field `num` in one place.
 
 			; The single source of truth for every per-field gather key: map the web key
 			; to its classic global/INI/GUI name, then set the global, persist to [Gather]
@@ -565,8 +553,8 @@ WebUpdateState(payload) {
 					vname := gmap[key] num
 					try %vname% := value
 					try IniWrite value, "settings\nm_config.ini", "Gather", vname
-					; The old per-number switch blocks updated the pattern dropdown text
-					; directly, before nm_UpdateGUIVar(); keep that exact ordering.
+					; The pattern dropdown text is set directly, before nm_UpdateGUIVar(), so the
+					; classic dropdown shows the newly selected pattern.
 					if (key = "pattern")
 						try MainGui["FieldPattern" num].Text := value
 					try nm_UpdateGUIVar(vname)
@@ -598,9 +586,8 @@ WebUpdateState(payload) {
 				}
 			}
 			; --- Blender slots (item / amount / repeat) ---
-			; NOTE the prefix lengths: "BlenderItem"=11, "BlenderIndex"=12, "BlenderAmount"=13.
-			; (These used to be off by one, so amount/index never matched and fell through to
-			; the generic branch, writing them into the wrong INI section.)
+			; Prefix lengths: "BlenderItem"=11, "BlenderIndex"=12, "BlenderAmount"=13, which route
+			; each Blender key to the Blender section instead of the generic fallback.
 			else if (SubStr(key, 1, 11) = "BlenderItem") {
 				nm_WebApplySetting("Blender", key, nm_WebBlenderItemFromWeb(value))
 			}
@@ -626,10 +613,9 @@ WebUpdateState(payload) {
 		case "kill":
 			key := data["key"], value := data["value"]
 			OutputDebug "[ahk] recv kill " key "=" value
-			; Keep the legacy classic GUI globals (which the macro runtime reads) and the
-			; classic controls in step with the web Kill tab. The hand-written cases below
-			; only ever set the classic *control* values, and assigning a control's Value
-			; does NOT update its associated global, so the runtime used to ignore web edits.
+			; The macro runtime reads the classic Kill globals (Bugrun*, Stinger*, KingBeetle*,
+			; ...), so mirror the web value onto both those globals and the classic controls.
+			; Assigning a control's Value does not update its global, so set both explicitly.
 			nm_WebKillToClassic(key, value)
 			if (key = "KillBugRunGatherInterrupt") {
 				KillBugRunGatherInterrupt := value ? 1 : 0
@@ -637,7 +623,7 @@ WebUpdateState(payload) {
 				SendKillMessage(key, KillBugRunGatherInterrupt)
 				; Update Classic GUI checkbox
 				try MainGui["BugrunInterruptCheck"].Value := KillBugRunGatherInterrupt
-				; Update Collect section for backward compatibility
+				; Also mirror to the [Collect] section.
 				IniWrite KillBugRunGatherInterrupt, "settings\nm_config.ini", "Collect", "BugrunInterruptCheck"
 			}
 			else if (key = "KillBugRunRespawnTime") {
@@ -822,7 +808,7 @@ WebUpdateState(payload) {
 				; Update Classic GUI controls
 				try MainGui["ChickLevel"].Value := value
 				try MainGui["ChickLevelText"].Text := value
-				; Update Collect section for backward compatibility
+				; Also mirror to the [Collect] section.
 				IniWrite value, "settings\nm_config.ini", "Collect", "ChickLevel"
 			}
 			else if (key = "KillCommandoChickHP") {
@@ -838,7 +824,7 @@ WebUpdateState(payload) {
 					InputChickHealth := Round(Min(100, ((value || 0) / MaxHealth) * 100), 2)
 					MainGui["ChickHealthText"].Opt("+c" Format("0x{1:02x}{2:02x}{3:02x}", Round(Min(3*(100-InputChickHealth), 150)), Round(Min(3*InputChickHealth, 150)), 0) " +Redraw")
 					MainGui["ChickHealthText"].Text := InputChickHealth "%"
-					; Update Collect section for backward compatibility
+					; Also mirror to the [Collect] section.
 					IniWrite InputChickHealth, "settings\nm_config.ini", "Collect", "InputChickHealth"
 				}
 			}
@@ -854,7 +840,7 @@ WebUpdateState(payload) {
 						MainGui["ChickTimeUpDown"].Value := timeMap[value]
 						ChickTime := (value = "Kill") ? "Kill" : SubStr(value, 1, -1)
 						MainGui["ChickTimeText"].Text := value
-						; Update Collect section for backward compatibility
+						; Also mirror to the [Collect] section.
 						IniWrite ChickTime, "settings\nm_config.ini", "Collect", "ChickTime"
 					}
 				}
@@ -876,7 +862,7 @@ WebUpdateState(payload) {
 					InputSnailHealth := Round(((value || 0) / 30000000) * 100, 2)
 					MainGui["SnailHealthText"].Opt("+c" Format("0x{1:02x}{2:02x}{3:02x}", Round(Min(3*(100-InputSnailHealth), 150)), Round(Min(3*InputSnailHealth, 150)), 0) " +Redraw")
 					MainGui["SnailHealthText"].Text := InputSnailHealth "%"
-					; Update Collect section for backward compatibility
+					; Also mirror to the [Collect] section.
 					IniWrite InputSnailHealth, "settings\nm_config.ini", "Collect", "InputSnailHealth"
 				}
 			}
@@ -906,7 +892,7 @@ WebUpdateState(payload) {
 					MainGui["SnailTimeUpDown"].Value := timeMap[value]
 					SnailTime := (value = "Kill") ? "Kill" : SubStr(value, 1, -1)
 					MainGui["SnailTimeText"].Text := value
-					; Update Collect section for backward compatibility
+					; Also mirror to the [Collect] section.
 					IniWrite SnailTime, "settings\nm_config.ini", "Collect", "SnailTime"
 				}
 			}
@@ -1336,8 +1322,7 @@ FormSubmitEvent(source, form) {
         SetTimer((*) => FormSubmitEvent("ahk", form), -1)
     }
     else {
-        ;WebViewToo v1.0.1 (breaking update): `GetFormData()` was removed; collect form
-        ;data directly with `ExecuteScript` and `WebViewCtrl.ForEach` (replaces `WebviewWindow.forEach`).
+        ; Collect the form fields with ExecuteScript, then pass them to WebViewCtrl.ForEach.
         formValues := {}
         js := "Array.from(document.getElementById('" form "').elements).filter(e => ['reset','submit','button'].indexOf(e.type) === -1).map(e => ({id: e.id, value: e.value}))"
         try formValues := JSON.parse(MyWindow.ExecuteScript("return JSON.stringify(" js ")"), true, true)
@@ -1513,9 +1498,8 @@ nm_ApplyWebWindowIcon() {
 	; Render each at its native size so Windows never has to stretch a single bitmap.
 	hSmall := nm_HIconFromPng(path, 16)
 	hBig := nm_HIconFromPng(path, 32)
-	; NOTE: SendMessage takes exactly 4 parameters (hWnd, Msg, wParam, lParam). Passing a
-	; fifth arg makes AHK v2 throw "Parameter list too large", and since the call site is
-	; wrapped in `try`, that error used to be swallowed silently and the icon never changed.
+	; SendMessage takes exactly 4 parameters (hWnd, Msg, wParam, lParam); a fifth would make
+	; AHK v2 throw "Parameter list too large".
 	if (hSmall >= 1)
 		DllCall("SendMessage", "Ptr", MyWindow.Hwnd, "UInt", 0x0080, "Ptr", 0, "Ptr", hSmall)
 	if (hBig >= 1)
@@ -1774,12 +1758,11 @@ nm_WebSnapshot() {
 ;///////////////////////////////////////////////////////////////////////////////////////////
 ; Kill tab <-> classic GUI mirroring
 ;
-; The web Kill tab persists to the [Kill] INI section using keys such as KillLadybugsMode,
-; while the legacy classic GUI (and the macro runtime) read a different set of globals
-; (BugrunLadybugsCheck/BugrunLadybugsLoot, Stinger*, KingBeetle*, ...). WebUpdateState's
-; `kill` case updated the classic *controls* but not those globals, and nothing reconciled
-; the two at startup, so the old UI showed stale "Off" values (and the runtime kept using
-; the stale globals) until a Kill control was touched. These helpers keep them in step.
+; The web Kill tab stores [Kill] INI keys (KillLadybugsMode, ...), while the macro runtime
+; reads a different set of classic globals (BugrunLadybugsCheck/BugrunLadybugsLoot, Stinger*,
+; KingBeetle*, ...). These helpers keep the two representations in step:
+;   nm_WebKillToClassic()    web value -> classic globals (+ controls)
+;   nm_WebPushClassicKill()  classic controls -> Kill* values for the snapshot
 ;///////////////////////////////////////////////////////////////////////////////////////////
 
 ; Apply one Kill* setting (key = "KillXxx", value) to the classic globals + [Collect] INI
@@ -1950,7 +1933,7 @@ nm_WebSyncKillToClassic() {
 	}
 }
 
-; Classic GUI -> web: derive the Kill* values from the legacy controls and store them in the
+; Classic GUI -> web: derive the Kill* values from the classic controls and store them in the
 ; Kill* globals so nm_WebSyncTimer's snapshot pushes them to the web GUI. Health/time/level
 ; are omitted because their classic handlers already broadcast the correct keys on change.
 nm_WebPushClassicKill() {
@@ -2580,14 +2563,11 @@ nm_NectarFieldChecks(map) {
 
 ; Persist the [Planters] keys a nectar preset changes with a SINGLE read + write.
 ;
-; The classic code calls ba_saveConfig_() here, which issues ~50 sequential IniWrite()
-; calls. IniWrite() re-reads and rewrites the whole file every time (~10 ms on an
-; ~11.7 KB nm_config.ini), so that call alone cost ~500 ms - the main source of the
-; "presets take half a second to fill out the dropdowns" lag. Only the keys a preset
-; actually touches are written here; every other [Planters] value is unchanged and
-; keeps its existing INI entry. This intentionally does NOT touch natro_macro.ahk, so
-; the upstream ba_saveConfig_() (used by the classic GUI and planter placement) is
-; left completely alone.
+; Writes only the [Planters] keys a preset touches, in one batched write instead of the
+; ~50 sequential IniWrite() calls ba_saveConfig_() would make (each IniWrite re-reads and
+; rewrites the whole nm_config.ini). Unchanged [Planters] values keep their existing INI
+; entry. natro_macro.ahk is not touched, so the classic ba_saveConfig_() (used by the
+; classic GUI and planter placement) is unaffected.
 nm_NectarPersistPreset() {
 	global
 	nmPresetKv := Map(
@@ -2625,8 +2605,7 @@ nm_NectarPersistPreset() {
 
 nm_WebBlenderItemFromWeb(v) {
 	; NOTE: do NOT name this variable `map` — identifiers are case-insensitive, so
-	; `map` shadows the built-in Map() and `Map(...)` would try to call the variable
-	; (which is what silently broke Blender/Wind Shrine item changes).
+	; `map` would shadow the built-in Map() and `Map(...)` would try to call the variable.
 	static itemMap := Map("antpass","AntPass","cloudvial","CloudVial","blueberry","Blueberry","blueextract","BlueExtract"
 		,"causticwax","CausticWax","enzymes","Enzymes","fielddice","FieldDice","glitter","Glitter","glue","Glue"
 		,"gumdrops","Gumdrops","hardwax","HardWax","loadeddice","LoadedDice","mooncharms","MoonCharms","oil","Oil"

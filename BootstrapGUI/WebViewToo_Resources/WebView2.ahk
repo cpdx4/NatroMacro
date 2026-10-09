@@ -2238,8 +2238,7 @@ CoTaskMem_String(ptr) {
 	s := StrGet(ptr), DllCall('ole32\CoTaskMemFree', 'ptr', ptr)
 	return s
 }
-; NOTE (NatroMacro fork): upstream ahk2_lib keeps ComVar.ahk/Promise.ahk at the repo root,
-; hence the original `..\` prefix. In this vendored layout they are co-located, so the
-; includes are adjusted here. Keep these files in the same folder (see CONTEXT.md section 4.1).
+; ComVar.ahk and Promise.ahk are co-located in this vendored layout, so they are included
+; without a path prefix. Keep them in the same folder (see CONTEXT.md section 4.1).
 #Include ComVar.ahk
 #Include Promise.ahk

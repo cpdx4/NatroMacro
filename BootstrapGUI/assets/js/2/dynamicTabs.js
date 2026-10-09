@@ -121,11 +121,8 @@ function drawPathSVG(tabNumber){
     // Draw a dash (1 marching ant) on the SVG
     svgpath = $('#path-dotted-tab-' + tabNumber).get(0);
     pathLength = svgpath.getTotalLength();
-    // Fixed marching-ant speed for EVERY pattern. It is the speed the previous
-    // code produced for the "Lines" pattern at Width 4 / Length 1: that path is
-    // 2880 px and was traversed in 5000 ms -> 0.576 px/ms (= 576 px/s). Using a
-    // constant means pattern name / Length / Width no longer change the speed.
-    // Reduced by 30% (0.576 * 0.7 = 0.4032 px/ms) to slow the marching ants.
+    // The marching-ant speed is a constant, so it does not vary with the pattern
+    // name, Length or Width.
     const FIXED_ANT_SPEED = 0.4032; // SVG px per millisecond
     animationSpeed = FIXED_ANT_SPEED;
     let dashOffset = 0;

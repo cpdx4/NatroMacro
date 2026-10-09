@@ -1,9 +1,8 @@
 # BootstrapGUI — the Modern UI
 
-The fork's WebView2-based GUI. **AutoHotkey owns every value**: it persists to the
-INI files, mirrors the classic GUI, and pushes a full snapshot to the page. The web
-page is a view that sends changes back. Everything here is self-contained so the
-baseline macro stays diffable against upstream NatroMacro.
+The WebView2-based GUI. **AutoHotkey owns every value**: it persists to the INI
+files, mirrors the classic GUI, and pushes a full snapshot to the page. The web page
+is a view that sends changes back. Everything here is self-contained.
 
 > Deeper project memory (line-number map, hooks in the main script, validation
 > notes) lives in [`../CONTEXT.md`](../CONTEXT.md).
@@ -53,7 +52,7 @@ Two channels carry everything between the page and the script:
 | File / dir | Responsibility |
 |------------|----------------|
 | [`BootstrapGUI.ahk`](BootstrapGUI.ahk) | Entry point, `#Include`s, and the AHK half of the bridge (`WebUpdateState`, `SendBootstrapState`, `nm_WebSnapshot`, `nm_WebApplySetting`, …) |
-| [`lib/`](lib) | Shared AHK modules `#Include`d by the entry point (currently [`Bridge.ahk`](lib/Bridge.ahk): the protocol constant + version check) |
+| [`lib/`](lib) | Shared AHK modules `#Include`d by the entry point ([`Bridge.ahk`](lib/Bridge.ahk): the protocol constant + version check) |
 | [`index.html`](index.html) | The entire single-page front-end |
 | [`assets/js/2/bridge.js`](assets/js/2/bridge.js) | Shared transport (`window.AhkBridge`) |
 | [`assets/js/2/patternInterpreter.js`](assets/js/2/patternInterpreter.js) | Pattern `.ahk` → SVG trace renderer |
@@ -197,8 +196,7 @@ whenever you edit that script.**
 
 ## Adding a new setting (end to end)
 
-Historically a setting had to be described in four places. The direction of travel
-is a single registry, but until that lands, add it in all required places:
+A setting is described in up to four places. Add it in all of them:
 
 1. **Front-end control map** — add an entry to the relevant `*_CONTROLS` object
    (e.g. `SETTINGS_CONTROLS` in
@@ -220,9 +218,8 @@ is a single registry, but until that lands, add it in all required places:
 
 1. Pick a stable `type` string and add it to the tables above.
 2. On the JS side, send with `AhkBridge` and receive with `AhkBridge.registerTab`.
-3. On the AHK side, add a `case` to `WebUpdateState` (or the registry entry that
-   will replace the hand-written cases) and, if the value is persisted, include it
-   in `nm_WebSnapshot`.
+3. On the AHK side, add a `case` to `WebUpdateState` (or a registry entry) and, if
+   the value is persisted, include it in `nm_WebSnapshot`.
 4. Bump `PROTOCOL_VERSION` in [`bridge.js`](assets/js/2/bridge.js) **only** if the
    change is breaking for an already-shipped page.
 

@@ -8,14 +8,12 @@
     <!--
       ==========================================================================
       ALL CSS/JS IS VENDORED LOCALLY SO THE GUI WORKS FULLY OFFLINE.
-      Do NOT add CDN <link>/<script> tags back - download the file into the
-      matching assets/ folder instead and record it in the table below.
+      Do NOT add CDN <link>/<script> tags - download the file into the matching
+      assets/ folder instead and record it in the table below.
 
       CASCADE ORDER IS DELIBERATE:
         framework (Bootstrap) -> third-party plugin CSS -> app CSS (styles.css)
       Keep assets/css/styles.css LAST so project styles always win.
-      (The old markup loaded Bootstrap 5.3.3 from a CDN *after* styles.css,
-       so Bootstrap silently overrode the project stylesheet. Fixed here.)
 
       --------------------------------------------------------------------------
       VENDORED ASSETS AND THEIR UPSTREAM SOURCES (for future updates)
@@ -247,9 +245,7 @@
                                                                 <div class="row">
                                                                     <div class="col text-start"><select id="pattern-tab-0" class="border rounded" style="width: 166px;">
                                                                             <optgroup label="Pattern Shape">
-                                                                                <!-- value must equal the pattern name the macro stores, and be UNIQUE:
-                                                                                     duplicate values made the classic->web pattern sync land on the
-                                                                                     wrong option (e.g. selecting "Snake" showed "Diamonds"). -->
+                                                                                <!-- value must equal the pattern name the macro stores, and be UNIQUE (the classic->web sync selects an option by value, so duplicate values would land on the wrong pattern). -->
                                                                                 <option value="Auryn" selected="">Auryn</option>
                                                                                 <option value="CornerXSnake" selected="">CornerXSnake</option>
                                                                                 <option value="Diamonds">Diamonds</option>
@@ -3696,7 +3692,7 @@
                                             <path d="M16 12l5 5l-4 4l-5 -5"></path>
                                             <path d="M16 17l-1.5 1.5"></path>
                                         </svg>Macro Tools</h5>
-                                    <p>Everything from the classic Misc tab, embedded here instead of opening separate windows.</p>
+                                    <p>Every tool from the classic Misc tab, embedded directly in this tab.</p>
                                 </div>
                                 <div class="card-body">
                                     <h6>Hive Tools</h6>
@@ -4113,12 +4109,12 @@
     <script src="assets/vendor/ms-dropdown/dd.min.js"></script>
     <script src="assets/js/1/bootstrap-select(v1.14.0-gamma1).js"></script>
     <script src="assets/js/bs-init.js"></script>
-    <script src="assets/js/2/bridge.js?v=1"></script>
-    <script src="assets/js/2/patternInterpreter.js?v=4"></script>
-    <script src="assets/js/2/dynamicTabs.js?v=8"></script>
+    <script src="assets/js/2/bridge.js?v=2"></script>
+    <script src="assets/js/2/patternInterpreter.js?v=5"></script>
+    <script src="assets/js/2/dynamicTabs.js?v=9"></script>
     <script src="assets/js/2/killTabHandlers.js?v=9"></script>
     <script src="assets/js/2/boostTabHandlers.js?v=9"></script>
-    <script src="assets/js/2/collectTabHandlers.js?v=9"></script>
+    <script src="assets/js/2/collectTabHandlers.js?v=10"></script>
     <script src="assets/js/2/plantersTabHandlers.js?v=9"></script>
     <script src="assets/js/2/questsTabHandlers.js?v=9"></script>
     <script src="assets/js/2/gatherTabHandlers.js?v=9"></script>

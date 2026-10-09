@@ -2,7 +2,7 @@
  * patternInterpreter.js
  * ---------------------------------------------------------------------------
  * Renders a Natro pattern file (patterns\<name>.ahk) as an SVG trace for the
- * Gather tab animation, replacing the old hard-coded e_lol trace.
+ * Gather tab animation.
  *
  * The pattern files are tiny AHK scripts built from a very small vocabulary:
  *
@@ -30,9 +30,7 @@
 (function () {
     'use strict';
 
-    // Pattern units -> SVG pixels. Matches the scale the old hard-coded e_lol
-    // trace used (it rendered `size` as length*15 and `spacingDelay` as 274*15),
-    // so patterns keep the same on-screen size as before.
+    // Pattern units -> SVG pixels (a pattern distance of N units draws N*15 px).
     var WALK_SCALE = 15;
     var MAX_LOOP = 10000; // safety cap against a runaway loop count
 

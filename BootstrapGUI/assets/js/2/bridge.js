@@ -3,21 +3,19 @@
  * ---------------------------------------------------------------------------
  * Shared WebView2 <-> AutoHotkey bridge for the Modern UI.
  *
- * WHY THIS EXISTS
- * Every tab handler used to re-implement the same boilerplate:
- *   - a `window.chrome && window.chrome.webview && ...hostObjects...` guard
+ * One place for the transport every tab needs:
+ *   - the `window.chrome && window.chrome.webview && ...hostObjects...` guard
  *   - `obj.func(JSON.stringify({ type: 'x', key, value }))` with a try/catch and
- *     a promise-rejection swallow
- *   - a `window.chrome.webview.addEventListener('message', ...)` listener that
+ *     a promise-rejection handler
+ *   - the `window.chrome.webview.addEventListener('message', ...)` listener that
  *     parses string-or-object payloads and routes `init` vs live messages
- * This module centralises all of that so each tab file only declares WHAT it
- * does, not HOW the transport works.
+ * Each tab file declares WHAT it does; this module handles HOW it is transported.
  *
  * PROTOCOL
  * Every message sent to AHK is a JSON object with at least:
  *   { v: <protocol version>, type: <string>, ...payload }
- * AHK tolerates a missing `v` (legacy senders) but logs a warning when the
- * version is present and newer than it understands.
+ * AHK accepts a message without `v` and logs a warning when `v` is present and
+ * newer than it understands.
  *
  * PUBLIC API (window.AhkBridge)
  *   PROTOCOL_VERSION                   number
@@ -83,8 +81,8 @@
     }
 
     function buttonClick(id) {
-        // `window.ahkButtonClick` is provided by dynamicTabs.js for backwards
-        // compatibility; prefer it when present so button routing stays single-sourced.
+        // `window.ahkButtonClick` is provided by dynamicTabs.js; prefer it when present
+        // so button routing stays single-sourced.
         if (typeof window.ahkButtonClick === 'function') {
             window.ahkButtonClick({ id: id });
             return;

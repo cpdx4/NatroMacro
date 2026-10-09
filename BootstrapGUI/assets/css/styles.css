@@ -59,7 +59,7 @@ div[id^='pathBall'] {
   }
 }
 
-/* old dropdown */
+/* ms-dropdown sizing */
 
 .box100x100 .ms-dd {
   width: 100px !important;
@@ -82,7 +82,7 @@ div[id^='pathBall'] {
   display: block !important;
 }
 
-/* new dropdown */
+/* bootstrap-select sizing */
 
 .box100x100 .bootstrap-select .dropdown-toggle .filter-option {
   text-align: center !important;
@@ -167,8 +167,7 @@ div[id^='pathBall'] {
 }
 
 
-/* Moved out of index.html <head> so the project stylesheet is the single place for app CSS. */
-        /* Disabled control styling for parent-child relationships */
+/* Disabled-control styling for parent/child control relationships. */
         .disabled-control {
             opacity: 0.5 !important;
             cursor: not-allowed !important;

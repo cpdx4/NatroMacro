@@ -6,13 +6,9 @@
  * Message type: { type: 'collect', key, value }
  * NOTE: Mondo / Ant / Dispenser checkboxes are handled in dynamicTabs.js.
  *
- * IMPORTANT: this file used to re-declare `let suppressCollectSend` and the
- * functions `sendCollectUpdate` / `applyCollectFromAhk`, which already exist in
- * dynamicTabs.js. Classic <script> tags share one global lexical scope, so the
- * duplicate `let` threw "Identifier has already been declared" and the WHOLE
- * file failed to load — which is why Blender / Wind Shrine / Beesmas / Memory
- * Match / Sticker Printer never synced in either direction.
- * All declarations here are now uniquely named.
+ * Classic <script> tags share one global lexical scope, so every identifier in
+ * this file is uniquely named and must not collide with dynamicTabs.js (which
+ * owns the Mondo / Ant / Dispenser handlers).
  */
 
 let suppressCollectExtraSend = false;
