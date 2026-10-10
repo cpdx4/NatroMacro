@@ -1606,12 +1606,12 @@
                                     <div class="row">
                                         <div class="col">
                                             <div>
-                                                <ul class="nav nav-tabs" role="tablist">
+                                                <ul class="nav nav-tabs" role="tablist" style="display:none;">
                                                     <li class="nav-item" role="presentation"><a class="nav-link" role="tab" data-bs-toggle="tab" href="#planters-manual">Manual</a></li>
                                                     <li class="nav-item" role="presentation"><a class="nav-link active" role="tab" data-bs-toggle="tab" href="#planters-automatic">Automatic+</a></li>
                                                 </ul>
                                                 <div class="tab-content">
-                                                    <div class="tab-pane" role="tabpanel" id="planters-manual">
+                                                    <div class="tab-pane show active" role="tabpanel" id="planters-manual">
                                                         <div class="card">
                                                             <div class="card-body">
                                                                 <h4 class="card-title">Current Cycle</h4>
@@ -2986,7 +2986,7 @@
                                                             </div>
                                                         </div>
                                                     </div>
-                                                    <div class="tab-pane active" role="tabpanel" id="planters-automatic">
+                                                    <div class="tab-pane show active" role="tabpanel" id="planters-automatic">
                                                         <div class="card">
                                                             <div class="card-header">
                                                                 <h5 class="mb-0">Nectar Presets</h5>
@@ -3506,6 +3506,7 @@
                                             <div class="mb-3">
                                                 <label class="form-label">GUI Theme</label>
                                                 <select class="border rounded border-1 border-secondary selectpicker" id="setGuiTheme">
+                                                                                                <option value="NoTheme">No Theme</option>
                                                     <option value="Allure">Allure</option>
                                                     <option value="Ayofe">Ayofe</option>
                                                     <option value="BluePaper">BluePaper</option>
@@ -4085,6 +4086,12 @@
                                                         <span style="color:#d48d22;margin-right:10px;white-space:nowrap;">Yiruuki :D</span>
                                                     </p>
                                                 </div>
+                                            </div>
+                                            <hr>
+                                                            <div class="alert alert-info" role="alert" style="font-size: 13px;">
+                                                                <i class="fas fa-book me-2"></i>
+                                                                <strong>Credit:</strong> Some images used in this tool came with permission from
+                                                                <a href="https://bee-swarm-simulator.fandom.com/" target="_blank" rel="noopener" class="alert-link">Bee Swarm Simulator Wiki</a>.
                                             </div>
                                             <hr>
                                             <p class="text-muted" style="font-size: 12px;">
