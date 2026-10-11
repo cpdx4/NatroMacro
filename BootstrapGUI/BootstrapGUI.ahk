@@ -54,7 +54,7 @@ nm_BootstrapWebGui() {
 ; AppData folder and fails with a visible error if the OS denies creation of both.
 WebView2DataDir := nm_PickWebViewDataDir()
 try
-    MyWindow := WebViewGui("+Resize +Caption +MinimizeBox +MaximizeBox", "Natro Macro (Modern UI)", , {DataDir: WebView2DataDir})
+    MyWindow := WebViewGui("+Caption +MinimizeBox +MaximizeBox", "Natro Macro (Modern UI)", , {DataDir: WebView2DataDir})
 catch as e {
     MsgBox "Failed to create the WebView2 window.`n`n" e.Message "`n`nDataDir: " WebView2DataDir, "Natro Macro - WebView2 error", 0x10
     ExitApp

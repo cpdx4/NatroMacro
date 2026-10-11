@@ -256,12 +256,7 @@ class WebViewSizer extends Gui {
 
     /** Tests if the cursor intersects with the sizing handles */
     static HitTest(lParam, Hwnd, &X?, &Y?) {
-        static BorderSize := 29
-        X := lParam << 48 >> 48, Y := lParam << 32 >> 48
-        WinGetPos &gX, &gY, &gW, &gH, Hwnd
-        Hit := (X < gX + BorderSize && 1) + (X >= gX + gW - BorderSize && 2)
-            + (Y < gY + BorderSize && 3) + (Y >= gy + gH - BorderSize && 6)
-        return Hit ? Hit + 9 : ""
+        return ""  // Disabled cursor hit-test to prevent resize cursor arrows at window edges
     }
 
     /**
