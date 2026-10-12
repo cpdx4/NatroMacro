@@ -273,17 +273,18 @@ function updatePlantersModeUi(mode) {
     };
 
     if (mode === 1) {
-        // Manual selected -> show the Manual tab and lock out Automatic+.
+        $('#planters-manual').show();
+        $('#planters-automatic').hide();
         setTabEnabled($manualTab, true);
         setTabEnabled($autoTab, false);
-        activatePlantersSubTab('#planters-manual');
     } else if (mode === 2) {
-        // Automatic+ selected -> show the Automatic+ tab and lock out Manual.
+        $('#planters-automatic').show();
+        $('#planters-manual').hide();
         setTabEnabled($manualTab, false);
         setTabEnabled($autoTab, true);
-        activatePlantersSubTab('#planters-automatic');
     } else {
-        // Off: leave whichever tab is currently visible alone; keep both clickable.
+        $('#planters-manual').show();
+        $('#planters-automatic').show();
         setTabEnabled($manualTab, true);
         setTabEnabled($autoTab, true);
     }
